@@ -60,9 +60,14 @@ flowchart LR
 
 ## Roadmap (Features)
 
-1. **Fundação** — DB core + RLS/PostGIS · Backend Fastify · Frontend Next.js *(em andamento)*
-2. Cardápio Digital & Delivery B2C
-3. Produtos & Insumos (ficha técnica, estoque FIFO/FEFO)
-4. Operação Interna (mesas, comandas, KDS, RBAC)
-5. Financeiro & Caixa (PDV, pagamentos online, DRE/CMV)
-6. Fiscal & Tributário (NFC-e/NF-e)
+Todas as seis features foram entregues e mescladas na `main`:
+
+1. **Fundação** — DB core + RLS/PostGIS · Backend Fastify · Frontend Next.js (PR #5)
+2. **Cardápio Digital & Delivery B2C** (PR #13)
+3. **Produtos & Insumos** — ficha técnica, estoque FIFO/FEFO (PR #19)
+4. **Operação Interna** — mesas, comandas, KDS, RBAC (PR #25)
+5. **Financeiro & Caixa** — PDV, pagamentos on-line, DRE/CMV (PR #31)
+6. **Fiscal & Tributário** — configuração tributária, fila de emissão
+
+O estado de verificação de cada módulo — o que está testado e o que **não** foi
+homologado contra ambientes reais — está no [README](../README.md#o-que-está-verificado-e-o-que-não-está).
