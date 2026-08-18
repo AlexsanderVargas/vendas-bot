@@ -45,3 +45,19 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test
+
+  web:
+    name: Frontend (build)
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://ci.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npm run build -w @vendas-bot/web
