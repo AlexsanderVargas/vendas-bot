@@ -10,6 +10,8 @@ type PrepStatus = 'pending' | 'preparing' | 'ready' | 'served' | 'canceled'
 interface QueueItem {
   orderId: string
   orderNumber: number
+  origin: 'own' | 'ifood' | 'ubereats'
+  externalDisplayId: string | null
   channel: string
   tableLabel: string | null
   itemId: string
@@ -25,6 +27,13 @@ const CHANNEL_LABEL: Record<string, string> = {
   delivery: 'Entrega',
   takeaway: 'Retirada',
   dine_in: 'Salão',
+}
+
+/** A cozinha precisa saber a origem: o prazo e o fluxo mudam por canal. */
+const ORIGIN_LABEL: Record<QueueItem['origin'], string> = {
+  own: '',
+  ifood: 'iFood',
+  ubereats: 'Uber Eats',
 }
 
 /** Espera longa vira alerta visual: acima de 15 min a cozinha precisa ver. */
@@ -114,7 +123,12 @@ export function KdsBoard() {
             <li key={orderId} className={`rounded-xl border-2 p-4 ${waitingStyle(oldest)}`}>
               <div className="mb-3 flex items-baseline justify-between">
                 <span className="font-semibold">
-                  nº {first.orderNumber}
+                  nº {first.externalDisplayId ?? first.orderNumber}
+                  {first.origin !== 'own' ? (
+                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
+                      {ORIGIN_LABEL[first.origin]}
+                    </span>
+                  ) : null}
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
                     {CHANNEL_LABEL[first.channel] ?? first.channel}
                     {first.tableLabel ? ` · ${first.tableLabel}` : ''}

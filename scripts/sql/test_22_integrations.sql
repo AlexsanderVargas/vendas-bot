@@ -225,3 +225,39 @@ select set_config('request.jwt.claims', '{}', false);
 set role anon;
 select test.assert((select count(*) from public.integrations) = 0, 'anônimo não vê integrações');
 reset role;
+
+-- ------------------- fila da cozinha com a origem (v2) -----------------------
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-0000000000a1","app_metadata":{"tenant_id":"10000000-0000-0000-0000-000000000001"}}', false);
+
+select test.assert(
+  (select count(*) from public.kds_queue('10000000-0000-0000-0000-000000000001')) =
+  (select count(*) from public.kds_queue_v2('10000000-0000-0000-0000-000000000001')),
+  'kds_queue_v2 devolve a mesma fila da v1 (contrato da v1 preservado)');
+
+select test.assert(
+  (select origin from public.kds_queue_v2('10000000-0000-0000-0000-000000000001')
+   where order_id = ((select r from t_ifood)->>'orderId')::uuid limit 1) = 'ifood',
+  'fila v2 identifica a origem do pedido para a cozinha');
+
+select test.assert(
+  (select external_display_id from public.kds_queue_v2('10000000-0000-0000-0000-000000000001')
+   where order_id = ((select r from t_ifood)->>'orderId')::uuid limit 1) = '4821',
+  'fila v2 traz o código curto que o entregador informa');
+
+-- ---------------------- desempenho por canal ---------------------------------
+select test.assert(
+  (select count(*) from public.marketplace_orders_report('10000000-0000-0000-0000-000000000001',
+    current_date - 30, current_date)) >= 1,
+  'relatório por canal agrupa os pedidos concluídos');
+
+select test.assert(
+  (select bool_and(average_ticket >= 0) from public.marketplace_orders_report(
+    '10000000-0000-0000-0000-000000000001', current_date - 30, current_date)),
+  'ticket médio por canal não fica negativo');
+
+select test.assert(
+  (select count(*) from public.marketplace_orders_report('10000000-0000-0000-0000-000000000002',
+    current_date - 400, current_date - 370)) = 0,
+  'período sem vendas devolve relatório vazio sem erro');
