@@ -68,7 +68,8 @@ bash scripts/seed.sh  # estabelecimento de demonstração, para avaliar as telas
 | 5 — Financeiro e Caixa | PDV, pagamento on-line, contas a pagar/receber, DRE e fluxo de caixa | #31 |
 | 6 — Fiscal e Tributário | Configuração tributária, documentos fiscais, fila de emissão e contingência | #35 |
 | 7 — Marketplaces | Integração com iFood e Uber Eats: importação de pedidos, mapa de itens, fila de eventos idempotente | #41 |
-| 8 — Identidade Visual | Marca do cliente no cardápio e no painel: cores, fonte, logo, capa, biblioteca de mídias | — |
+| 8 — Identidade Visual | Marca do cliente no cardápio e no painel: cores, fonte, logo, capa, biblioteca de mídias | #46 |
+| 9 — Operação e Homologação | Guia de provisionamento, worker de polling e fila fiscal, seed de demonstração | — |
 
 ## O que está verificado e o que não está
 
@@ -76,8 +77,8 @@ Esta seção existe para não confundir "implementado" com "homologado".
 
 ### Verificado automaticamente
 
-- **Banco**: 33 migrations aplicam limpas do zero, com **464 asserções** cobrindo isolamento por RLS entre estabelecimentos e entre clientes, regras de negócio (preço recalculado no servidor, FIFO/FEFO, CMV histórico, conciliação de caixa, numeração fiscal sem buraco, pedido de marketplace com o preço do parceiro) e integridade (constraints, triggers de derivação de `tenant_id`, arquivo preso à pasta do próprio estabelecimento).
-- **API**: **383 testes** com `fastify.inject`, cobrindo contratos de entrada e saída, autenticação, autorização por permissão, e o mapeamento de erros de negócio para status HTTP.
+- **Banco**: 34 migrations aplicam limpas do zero, com **494 asserções** cobrindo isolamento por RLS entre estabelecimentos e entre clientes, regras de negócio (preço recalculado no servidor, FIFO/FEFO, CMV histórico, conciliação de caixa, numeração fiscal sem buraco, pedido de marketplace com o preço do parceiro) e integridade (constraints, triggers de derivação de `tenant_id`, arquivo preso à pasta do próprio estabelecimento).
+- **API**: **394 testes** com `fastify.inject`, cobrindo contratos de entrada e saída, autenticação, autorização por permissão, e o mapeamento de erros de negócio para status HTTP.
 - **Frontend**: `tsc --noEmit` e `next build` sem erros.
 - **CI**: `.github/workflows/ci.yml` roda banco (PostGIS), typecheck, testes e build a cada push e pull request.
 
@@ -97,6 +98,7 @@ Esta seção existe para não confundir "implementado" com "homologado".
 - Não há testes de ponta a ponta de navegador (Playwright) — a verificação do frontend é typecheck e build.
 - As imagens dos estabelecimentos são servidas com `unoptimized` no `next/image`: o host vem do projeto Supabase de cada instalação, então não há lista de domínios que possa ser fixada em build. Com um domínio de CDN definido, vale configurar `images.remotePatterns` e ligar a otimização.
 - O webhook do Uber Eats e o polling do iFood identificam o estabelecimento pela integração cadastrada. Vale medir o custo do polling antes de escalar o número de lojas.
+- **Rode uma única instância do worker.** Duas consultariam o iFood em dobro. A fila fiscal é segura contra concorrência (usa `for update skip locked`), mas o polling não tem essa proteção.
 
 ## Documentação
 

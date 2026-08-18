@@ -42,6 +42,7 @@ flowchart LR
 | Fiscal | integração NFC-e / NF-e |
 | Marketplaces | integrações iFood/Uber Eats, mapa de itens, fila de eventos |
 | Identidade Visual | `tenant_branding`, biblioteca de mídias, tema servido por estabelecimento |
+| Operação assistida | worker de polling de marketplaces e consumo da fila fiscal |
 
 ## Estratégia Multi-tenant
 
@@ -92,9 +93,28 @@ Pedidos de iFood e Uber Eats entram pelo mesmo caminho dos pedidos próprios
 Idempotência por `(integration_id, external_event_id)`; evento que falha
 **não** é confirmado, para o parceiro reentregar.
 
+## Worker de operação
+
+Nem tudo no sistema é reativo. Dois fluxos precisam de alguém que os dispare:
+
+- **O iFood não chama a aplicação** — é polling. Alguém tem de perguntar por
+  eventos novos a cada meio minuto.
+- **A fila de emissão fiscal** precisa de quem a consuma e transmita ao
+  integrador.
+
+Ambos vivem em `apps/api/src/worker.ts`, um **processo separado do servidor
+HTTP**. A razão é de escala: se o polling vivesse dentro da API, subir uma
+segunda instância do servidor dobraria as consultas ao parceiro. Em produção,
+roda-se **uma única instância** do worker.
+
+A fila fiscal é segura contra concorrência — `claim_fiscal_documents` usa
+`for update skip locked` e resgata documentos presos em `transmitting`, o que
+cobre o caso de um worker que morre no meio do ciclo. O polling de
+marketplaces não tem essa proteção, e é por isso que a instância é única.
+
 ## Roadmap (Features)
 
-Todas as oito features foram entregues e mescladas na `main`:
+Todas as nove features foram entregues e mescladas na `main`:
 
 1. **Fundação** — DB core + RLS/PostGIS · Backend Fastify · Frontend Next.js (PR #5)
 2. **Cardápio Digital & Delivery B2C** (PR #13)
@@ -103,7 +123,8 @@ Todas as oito features foram entregues e mescladas na `main`:
 5. **Financeiro & Caixa** — PDV, pagamentos on-line, DRE/CMV (PR #31)
 6. **Fiscal & Tributário** — configuração tributária, fila de emissão (PR #35)
 7. **Marketplaces** — iFood e Uber Eats (PR #41)
-8. **Identidade Visual** — branding, biblioteca de mídias, tema aplicado
+8. **Identidade Visual** — branding, biblioteca de mídias, tema aplicado (PR #46)
+9. **Operação e Homologação** — guia de provisionamento, worker, seed de demonstração
 
 O estado de verificação de cada módulo — o que está testado e o que **não** foi
 homologado contra ambientes reais — está no [README](../README.md#o-que-está-verificado-e-o-que-não-está).
