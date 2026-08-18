@@ -169,3 +169,70 @@ describe('socialEntries', () => {
     expect(socialEntries({})).toEqual([])
   })
 })
+
+// ---------------------------------------------------------------------------
+// Aplicação do tema (PBI 45): o que o servidor injeta no HTML.
+// ---------------------------------------------------------------------------
+describe('tema aplicado no servidor', () => {
+  it('a folha de estilo é um bloco :root pronto para o <style>', () => {
+    const css = themeStyleSheet(BRANDING)
+    expect(css.startsWith(':root{')).toBe(true)
+    expect(css.endsWith('}')).toBe(true)
+  })
+
+  it('a cor principal chega ao CSS exatamente como foi salva', () => {
+    expect(themeStyleSheet(BRANDING)).toContain('--brand-primary:#2A7FE8')
+  })
+
+  it('o arredondamento vira pixels', () => {
+    expect(themeVariables(BRANDING)['--brand-radius']).toBe('20px')
+  })
+
+  it('a fonte escolhida entra na variável usada pelo body', () => {
+    expect(themeVariables(BRANDING)['--brand-font']).toContain('Poppins')
+  })
+
+  it('cor secundária ausente não sobrescreve o padrão do produto', () => {
+    // Emitir "--background:null" pintaria o cardápio de nada.
+    const variables = themeVariables({ ...BRANDING, backgroundColor: null, textColor: null })
+    expect(variables['--background']).toBeUndefined()
+    expect(variables['--foreground']).toBeUndefined()
+  })
+
+  it('cor secundária definida entra no CSS', () => {
+    const variables = themeVariables({ ...BRANDING, backgroundColor: '#101010' })
+    expect(variables['--background']).toBe('#101010')
+  })
+
+  it('o realce suave é derivado da cor principal, não fixo', () => {
+    const azul = themeVariables(BRANDING)['--brand-primary-soft']
+    const verde = themeVariables({ ...BRANDING, primaryColor: '#1A7F37' })['--brand-primary-soft']
+    expect(azul).not.toBe(verde)
+  })
+
+  it('a folha de estilo não deixa escapar do <style>', () => {
+    // As aspas que sobram são as do nome da fonte ("Poppins"), que é CSS
+    // legítimo e vem de lista fechada. O que não pode aparecer é marcação.
+    const css = themeStyleSheet(BRANDING)
+    expect(css).not.toContain('<')
+    expect(css).not.toContain('>')
+  })
+
+  it('fonte fora da lista não produz valor arbitrário no CSS', () => {
+    const css = themeStyleSheet({ ...BRANDING, fontFamily: '</style><script>' as never })
+    expect(css).not.toContain('script')
+    expect(css).toContain('system-ui')
+  })
+
+  it('estabelecimento sem personalização gera CSS válido com os padrões', () => {
+    const padrao = themeStyleSheet({
+      ...BRANDING,
+      isCustomized: false,
+      primaryColor: '#E85D2A',
+      fontFamily: 'system',
+      cornerRadius: 12,
+    })
+    expect(padrao).toContain('--brand-primary:#E85D2A')
+    expect(padrao).toContain('--brand-radius:12px')
+  })
+})
