@@ -8,7 +8,7 @@ export type RpcHandlers = Record<string, (params: Record<string, unknown>) => un
 interface Filter {
   column: string
   value: unknown
-  op: 'eq' | 'in'
+  op: 'eq' | 'in' | 'ilike'
 }
 
 /**
@@ -59,6 +59,11 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
     return this
   }
 
+  ilike(column: string, pattern: string): this {
+    this.filters.push({ column, value: pattern, op: 'ilike' })
+    return this
+  }
+
   order(column: string): this {
     this.orderBy = column
     return this
@@ -103,11 +108,12 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
 
   private resolve(): Record<string, unknown>[] {
     let result = this.rows.filter((row) =>
-      this.filters.every((filter) =>
-        filter.op === 'eq'
-          ? row[filter.column] === filter.value
-          : (filter.value as unknown[]).includes(row[filter.column]),
-      ),
+      this.filters.every((filter) => {
+        if (filter.op === 'eq') return row[filter.column] === filter.value
+        if (filter.op === 'in') return (filter.value as unknown[]).includes(row[filter.column])
+        const pattern = String(filter.value).replace(/%/g, '').toLowerCase()
+        return String(row[filter.column] ?? '').toLowerCase().includes(pattern)
+      }),
     )
     if (this.orderBy) {
       const key = this.orderBy
