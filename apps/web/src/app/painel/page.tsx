@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { StockAlerts } from '@/components/painel/stock-alerts'
 
 export default async function PainelHome() {
   const supabase = await createClient()
@@ -24,6 +25,10 @@ export default async function PainelHome() {
           <dd className="text-3xl font-semibold">{insumosCriticos ?? 0}</dd>
         </div>
       </dl>
+      <section className="mt-8">
+        <h2 className="mb-3 text-lg font-semibold">Alertas de estoque</h2>
+        <StockAlerts />
+      </section>
     </main>
   )
 }

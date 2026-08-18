@@ -104,3 +104,23 @@ export const StockMovement = Type.Object({
   reason: Type.Union([Type.String(), Type.Null()]),
   createdAt: Type.String(),
 })
+
+/** Contrato de saída dos alertas de estoque. */
+export const StockAlert = Type.Object({
+  kind: Type.Union([
+    Type.Literal('below_minimum'),
+    Type.Literal('expiring'),
+    Type.Literal('expired'),
+  ]),
+  ingredientId: Uuid,
+  ingredientName: Type.String(),
+  baseUnit: UnitSchema,
+  quantity: Type.Number(),
+  threshold: Type.Union([Type.Number(), Type.Null()]),
+  expiresAt: Type.Union([Type.String(), Type.Null()]),
+  batchCode: Type.Union([Type.String(), Type.Null()]),
+})
+
+export const StockAlertQuery = Type.Object({
+  expiringDays: Type.Integer({ minimum: 1, maximum: 90, default: 7 }),
+})
