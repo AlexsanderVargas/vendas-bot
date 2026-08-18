@@ -34,3 +34,5 @@ Thumbs.db
 
 # Artefatos de teste local
 scripts/.pgdata/
+.next/
+next-env.d.ts
