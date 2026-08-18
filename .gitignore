@@ -31,3 +31,8 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Artefatos de teste local
+scripts/.pgdata/
+.next/
+next-env.d.ts

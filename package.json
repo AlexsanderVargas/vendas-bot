@@ -1,0 +1,20 @@
+{
+  "name": "vendas-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build -w @vendas-bot/shared && npm run build -w @vendas-bot/api && npm run build -w @vendas-bot/web",
+    "build:shared": "npm run build -w @vendas-bot/shared",
+    "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
+    "test": "npm run build:shared && npm run test --workspaces --if-present",
+    "db:test": "bash scripts/db-test.sh"
+  }
+}
