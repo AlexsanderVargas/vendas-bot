@@ -49,7 +49,7 @@ const addressRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/addresses',
     {
-      preHandler: app.requireAuth,
+      onRequest: app.requireAuth,
       schema: {
         tags: ['entrega'],
         description: 'Endereços do cliente no estabelecimento informado.',
@@ -71,7 +71,7 @@ const addressRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.post(
     '/addresses',
     {
-      preHandler: app.requireAuth,
+      onRequest: app.requireAuth,
       schema: {
         tags: ['entrega'],
         description: 'Cadastra um endereço para o cliente autenticado.',
@@ -126,7 +126,7 @@ const addressRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.patch(
     '/addresses/:id',
     {
-      preHandler: app.requireAuth,
+      onRequest: app.requireAuth,
       schema: {
         tags: ['entrega'],
         description: 'Atualiza um endereço do cliente.',
@@ -163,7 +163,7 @@ const addressRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.post(
     '/addresses/:id/default',
     {
-      preHandler: app.requireAuth,
+      onRequest: app.requireAuth,
       schema: {
         tags: ['entrega'],
         description: 'Define o endereço padrão do cliente.',
@@ -188,7 +188,7 @@ const addressRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.delete(
     '/addresses/:id',
     {
-      preHandler: app.requireAuth,
+      onRequest: app.requireAuth,
       schema: {
         tags: ['entrega'],
         description: 'Remove um endereço do cliente.',
