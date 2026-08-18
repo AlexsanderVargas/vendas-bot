@@ -19,7 +19,7 @@ apps/api/               Backend Fastify
 apps/web/               Frontend Next.js (B2C + painel interno)
 packages/shared/        Contratos e regras compartilhadas entre API e web
 supabase/migrations/    Fonte da verdade do schema (append-only)
-scripts/                db-test.sh e as suítes de asserção SQL
+scripts/                db-test.sh, seed.sh e as suítes de asserção SQL
 docs/                   Arquitetura, regras de engenharia e notas de banco
 ```
 
@@ -34,9 +34,17 @@ cp apps/web/.env.example apps/web/.env.local
 
 npm run dev -w @vendas-bot/api    # http://localhost:3333
 npm run dev -w @vendas-bot/web    # http://localhost:3000
+npm run worker -w @vendas-bot/api # polling do iFood + fila de emissão fiscal
 ```
 
+O **worker** é um processo separado do servidor HTTP: o iFood não chama a
+aplicação (é polling) e a fila fiscal precisa de quem a consuma. Rode **uma
+única instância** — duas consultariam o iFood em dobro.
+
 Aplicar o schema: `supabase db push`, ou executar os arquivos de `supabase/migrations/` em ordem numérica no SQL Editor.
+
+Para provisionar de verdade — contas, chaves e o que é gratuito em cada
+integração — siga [docs/homologacao.md](docs/homologacao.md).
 
 ## Verificação
 
@@ -44,6 +52,7 @@ Aplicar o schema: `supabase db push`, ou executar os arquivos de `supabase/migra
 npm run typecheck     # api + web + shared
 npm run test          # suíte de API (vitest)
 npm run db:test       # migrations + asserções de RLS e regras de negócio
+bash scripts/seed.sh  # estabelecimento de demonstração, para avaliar as telas com dados
 ```
 
 `scripts/db-test.sh` sobe um PostgreSQL descartável (ou usa o serviço do CI), aplica o stub do schema `auth` do Supabase, roda **todas** as migrations e executa as suítes de asserção. Qualquer asserção falsa aborta o script.
@@ -59,7 +68,8 @@ npm run db:test       # migrations + asserções de RLS e regras de negócio
 | 5 — Financeiro e Caixa | PDV, pagamento on-line, contas a pagar/receber, DRE e fluxo de caixa | #31 |
 | 6 — Fiscal e Tributário | Configuração tributária, documentos fiscais, fila de emissão e contingência | #35 |
 | 7 — Marketplaces | Integração com iFood e Uber Eats: importação de pedidos, mapa de itens, fila de eventos idempotente | #41 |
-| 8 — Identidade Visual | Marca do cliente no cardápio e no painel: cores, fonte, logo, capa, biblioteca de mídias | — |
+| 8 — Identidade Visual | Marca do cliente no cardápio e no painel: cores, fonte, logo, capa, biblioteca de mídias | #46 |
+| 9 — Operação e Homologação | Guia de provisionamento, worker de polling e fila fiscal, seed de demonstração | — |
 
 ## O que está verificado e o que não está
 
@@ -67,8 +77,8 @@ Esta seção existe para não confundir "implementado" com "homologado".
 
 ### Verificado automaticamente
 
-- **Banco**: 33 migrations aplicam limpas do zero, com **464 asserções** cobrindo isolamento por RLS entre estabelecimentos e entre clientes, regras de negócio (preço recalculado no servidor, FIFO/FEFO, CMV histórico, conciliação de caixa, numeração fiscal sem buraco, pedido de marketplace com o preço do parceiro) e integridade (constraints, triggers de derivação de `tenant_id`, arquivo preso à pasta do próprio estabelecimento).
-- **API**: **383 testes** com `fastify.inject`, cobrindo contratos de entrada e saída, autenticação, autorização por permissão, e o mapeamento de erros de negócio para status HTTP.
+- **Banco**: 34 migrations aplicam limpas do zero, com **494 asserções** cobrindo isolamento por RLS entre estabelecimentos e entre clientes, regras de negócio (preço recalculado no servidor, FIFO/FEFO, CMV histórico, conciliação de caixa, numeração fiscal sem buraco, pedido de marketplace com o preço do parceiro) e integridade (constraints, triggers de derivação de `tenant_id`, arquivo preso à pasta do próprio estabelecimento).
+- **API**: **394 testes** com `fastify.inject`, cobrindo contratos de entrada e saída, autenticação, autorização por permissão, e o mapeamento de erros de negócio para status HTTP.
 - **Frontend**: `tsc --noEmit` e `next build` sem erros.
 - **CI**: `.github/workflows/ci.yml` roda banco (PostGIS), typecheck, testes e build a cada push e pull request.
 
@@ -88,9 +98,11 @@ Esta seção existe para não confundir "implementado" com "homologado".
 - Não há testes de ponta a ponta de navegador (Playwright) — a verificação do frontend é typecheck e build.
 - As imagens dos estabelecimentos são servidas com `unoptimized` no `next/image`: o host vem do projeto Supabase de cada instalação, então não há lista de domínios que possa ser fixada em build. Com um domínio de CDN definido, vale configurar `images.remotePatterns` e ligar a otimização.
 - O webhook do Uber Eats e o polling do iFood identificam o estabelecimento pela integração cadastrada. Vale medir o custo do polling antes de escalar o número de lojas.
+- **Rode uma única instância do worker.** Duas consultariam o iFood em dobro. A fila fiscal é segura contra concorrência (usa `for update skip locked`), mas o polling não tem essa proteção.
 
 ## Documentação
 
+- [Homologação e Provisionamento](docs/homologacao.md) — o que criar fora do repositório, em que ordem, e o que custa dinheiro.
 - [Regras de Engenharia](docs/engineering-rules.md) — fluxo de branches, contratos de I/O e gestão de issues.
 - [Arquitetura](docs/architecture.md) — visão modular e estratégia multi-tenant.
 - [PBI 1 — Database Core](docs/database/pbi-1-database-core.md) — diagrama ER e decisões do núcleo.
