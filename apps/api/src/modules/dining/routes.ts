@@ -67,7 +67,130 @@ export function canTransitionTable(from: TableStatus, to: TableStatus): boolean 
   return allowed[from].includes(to)
 }
 
+/** Erros de comanda -> status HTTP. */
+const COMANDA_ERROR: Record<string, { status: number; message: string }> = {
+  mesa_nao_encontrada: { status: 404, message: 'Mesa não encontrada.' },
+  pedido_nao_encontrado: { status: 404, message: 'Comanda não encontrada.' },
+  nao_autorizado: { status: 403, message: 'Esta mesa pertence a outro estabelecimento.' },
+  mesa_indisponivel: { status: 409, message: 'Mesa fora de uso.' },
+  comanda_ja_aberta: { status: 409, message: 'Esta mesa já tem uma comanda aberta.' },
+  pedido_fechado: { status: 409, message: 'Comanda encerrada não aceita novos itens.' },
+  produto_indisponivel: { status: 409, message: 'Produto indisponível.' },
+  opcional_invalido: { status: 400, message: 'Opcional inválido para este produto.' },
+  opcionais_obrigatorios: { status: 400, message: 'Revise os opcionais obrigatórios do item.' },
+}
+
+/** Contrato: (error) -> { status, message } */
+export function mapComandaError(error: string): { status: number; message: string } {
+  return COMANDA_ERROR[error] ?? { status: 400, message: 'Não foi possível concluir a operação.' }
+}
+
 const diningRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  app.post(
+    '/dining/tables/:id/order',
+    {
+      onRequest: app.requirePermission('orders.create'),
+      schema: {
+        tags: ['comandas'],
+        description: 'Abre a comanda da mesa e a marca como ocupada.',
+        params: IdParams,
+        body: Type.Object({
+          notes: Type.Optional(Type.Union([Type.String({ maxLength: 500 }), Type.Null()])),
+        }),
+        response: {
+          201: Type.Object({ orderId: Uuid, orderNumber: Type.Integer() }),
+          ...StandardErrors,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { data, error } = await request.supabase.rpc('open_table_order', {
+        p_table_id: request.params.id,
+        p_notes: request.body.notes ?? null,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      const result = data as { ok: boolean; error: string | null; orderId: string | null; orderNumber: number | null }
+      if (!result.ok || !result.orderId) {
+        const mapped = mapComandaError(result.error ?? 'desconhecido')
+        throw app.httpErrors.createError(mapped.status, mapped.message)
+      }
+      return reply.status(201).send({
+        orderId: result.orderId,
+        orderNumber: Number(result.orderNumber),
+      })
+    },
+  )
+
+  app.post(
+    '/orders/:id/items',
+    {
+      onRequest: app.requirePermission('orders.create'),
+      schema: {
+        tags: ['comandas'],
+        description: 'Lança um item na comanda. O preço é sempre recalculado no servidor.',
+        params: IdParams,
+        body: Type.Object({
+          productId: Uuid,
+          quantity: Type.Number({ exclusiveMinimum: 0, maximum: 999 }),
+          optionIds: Type.Array(Uuid, { maxItems: 30, default: [] }),
+          notes: Type.Optional(Type.Union([Type.String({ maxLength: 200 }), Type.Null()])),
+        }),
+        response: {
+          201: Type.Object({ itemId: Uuid, unitPrice: Type.Number(), orderTotal: Type.Number() }),
+          ...StandardErrors,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { data, error } = await request.supabase.rpc('add_order_item', {
+        p_order_id: request.params.id,
+        p_product_id: request.body.productId,
+        p_quantity: request.body.quantity,
+        p_option_ids: request.body.optionIds,
+        p_notes: request.body.notes ?? null,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      const result = data as { ok: boolean; error: string | null; itemId: string | null; unitPrice: number; orderTotal: number }
+      if (!result.ok || !result.itemId) {
+        const mapped = mapComandaError(result.error ?? 'desconhecido')
+        throw app.httpErrors.createError(mapped.status, mapped.message)
+      }
+      return reply.status(201).send({
+        itemId: result.itemId,
+        unitPrice: Number(result.unitPrice),
+        orderTotal: Number(result.orderTotal),
+      })
+    },
+  )
+
+  app.post(
+    '/orders/:id/close',
+    {
+      onRequest: app.requirePermission('orders.update_status'),
+      schema: {
+        tags: ['comandas'],
+        description: 'Fecha a conta da mesa (status da mesa vai para cobrança).',
+        params: IdParams,
+        response: { 200: Type.Object({ total: Type.Number() }), ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const { data, error } = await request.supabase.rpc('close_table_order', {
+        p_order_id: request.params.id,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      const result = data as { ok: boolean; error: string | null; total: number | null }
+      if (!result.ok) {
+        const mapped = mapComandaError(result.error ?? 'desconhecido')
+        throw app.httpErrors.createError(mapped.status, mapped.message)
+      }
+      return { total: Number(result.total) }
+    },
+  )
+
   app.get(
     '/dining/tables',
     {

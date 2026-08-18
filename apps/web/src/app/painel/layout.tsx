@@ -8,6 +8,7 @@ const NAV = [
   { href: '/painel', label: 'Visão geral' },
   { href: '/painel/insumos', label: 'Insumos' },
   { href: '/painel/salao', label: 'Salão' },
+  { href: '/painel/comandas', label: 'Comandas' },
   { href: '/painel/estoque', label: 'Estoque' },
   { href: '/painel/fichas', label: 'Fichas técnicas' },
   { href: '/painel/fornecedores', label: 'Fornecedores' },

@@ -28,3 +28,28 @@ describe('canTransitionTable (espelho de can_transition_table)', () => {
     expect(canTransitionTable('occupied', 'occupied')).toBe(true)
   })
 })
+
+describe('mapComandaError', () => {
+  it('mapeia mesa já com comanda para 409', async () => {
+    const { mapComandaError } = await import('../src/modules/dining/routes.js')
+    const mapped = mapComandaError('comanda_ja_aberta')
+    expect(mapped.status).toBe(409)
+    expect(mapped.message).toContain('já tem uma comanda')
+  })
+  it('mapeia mesa de outro estabelecimento para 403', async () => {
+    const { mapComandaError } = await import('../src/modules/dining/routes.js')
+    expect(mapComandaError('nao_autorizado').status).toBe(403)
+  })
+  it('mapeia comanda encerrada para 409', async () => {
+    const { mapComandaError } = await import('../src/modules/dining/routes.js')
+    expect(mapComandaError('pedido_fechado').status).toBe(409)
+  })
+  it('mapeia opcional obrigatório para 400', async () => {
+    const { mapComandaError } = await import('../src/modules/dining/routes.js')
+    expect(mapComandaError('opcionais_obrigatorios').status).toBe(400)
+  })
+  it('usa mensagem genérica para erro desconhecido', async () => {
+    const { mapComandaError } = await import('../src/modules/dining/routes.js')
+    expect(mapComandaError('novo_erro').status).toBe(400)
+  })
+})
