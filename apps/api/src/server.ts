@@ -11,6 +11,7 @@ import errorsPlugin from './plugins/errors.js'
 import healthRoutes from './modules/health/routes.js'
 import meRoutes from './modules/me/routes.js'
 import menuRoutes from './modules/menu/routes.js'
+import addressRoutes from './modules/addresses/routes.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -69,6 +70,7 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
       await api.register(healthRoutes)
       await api.register(meRoutes)
       await api.register(menuRoutes)
+      await api.register(addressRoutes)
     },
     { prefix: '/api/v1' },
   )

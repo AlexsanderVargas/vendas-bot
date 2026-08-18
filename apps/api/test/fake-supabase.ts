@@ -2,6 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type TableRows = Record<string, ReadonlyArray<Record<string, unknown>>>
 
+/** Respostas de funções RPC, por nome. */
+export type RpcHandlers = Record<string, (params: Record<string, unknown>) => unknown>
+
 interface Filter {
   column: string
   value: unknown
@@ -16,10 +19,18 @@ interface Filter {
  *
  * Contrato: (tables) -> SupabaseClient
  */
-export function createFakeSupabase(tables: TableRows): SupabaseClient {
+export function createFakeSupabase(
+  tables: TableRows,
+  rpcs: RpcHandlers = {},
+): SupabaseClient {
   return {
     from(table: string) {
       return new FakeQuery(tables[table] ?? [])
+    },
+    async rpc(name: string, params: Record<string, unknown>) {
+      const handler = rpcs[name]
+      if (!handler) return { data: null, error: { message: `RPC não configurada: ${name}` } }
+      return { data: handler(params), error: null }
     },
   } as unknown as SupabaseClient
 }
@@ -47,6 +58,22 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
   order(column: string): this {
     this.orderBy = column
     return this
+  }
+
+  insert(): this {
+    return this
+  }
+
+  update(): this {
+    return this
+  }
+
+  delete(): this {
+    return this
+  }
+
+  async single(): Promise<{ data: Record<string, unknown> | null; error: null }> {
+    return { data: this.resolve()[0] ?? null, error: null }
   }
 
   private resolve(): Record<string, unknown>[] {
