@@ -11,6 +11,7 @@ const NAV = [
   { href: '/painel/estoque', label: 'Estoque' },
   { href: '/painel/fichas', label: 'Fichas técnicas' },
   { href: '/painel/fornecedores', label: 'Fornecedores' },
+  { href: '/painel/equipe', label: 'Equipe' },
 ]
 
 export default async function PainelLayout({ children }: { children: ReactNode }) {
