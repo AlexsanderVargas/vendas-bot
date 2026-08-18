@@ -418,12 +418,47 @@ resolve `@vendas-bot/shared`. Configure assim:
 | Campo | Valor |
 |---|---|
 | Root Directory | **raiz do repositório** (deixe vazio) |
-| Build Command | `npm run build:shared && npm run build -w @vendas-bot/web` |
+| Build Command | `npm run build -w @vendas-bot/web` |
 | Output Directory | `apps/web/.next` |
 | Install Command | `npm ci` |
 
+O `build` de cada app já constrói o `packages/shared` antes, via `prebuild` —
+não é preciso encadear os dois comandos à mão, e o build funciona igual se a
+plataforma resolver usar o comando que ela mesma detectou.
+
 E as variáveis de ambiente do projeto na Vercel: `NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` e `NEXT_PUBLIC_API_URL`.
+
+### Host da API e do worker
+
+A API e o worker precisam de um host Node — nem a Vercel nem o Supabase servem:
+a Vercel é serverless (o laço do worker não sobrevive entre requisições, e o
+rate limit em memória vira decorativo) e as Edge Functions do Supabase são
+Deno, não Node.
+
+No Railway, são **dois serviços apontando para o mesmo repositório**, ambos
+escolhendo o pacote `api` na detecção:
+
+| | `api` | `worker` |
+|---|---|---|
+| Start | `npm run start -w @vendas-bot/api` | `npm run start:worker -w @vendas-bot/api` |
+| Domínio público | sim | **não** |
+
+O worker não aparece na detecção automática porque não é um pacote npm
+separado — é um segundo entrypoint dentro do `@vendas-bot/api`. Crie o serviço
+à mão e troque só o comando de start.
+
+**Watch Paths** nos dois, para um push no frontend não redeployar o backend:
+
+```
+apps/api/**
+packages/shared/**
+package.json
+package-lock.json
+tsconfig.base.json
+```
+
+Rode **uma única instância** do worker: duas consultariam o iFood em dobro.
 
 ### O que o pipeline NÃO faz
 
