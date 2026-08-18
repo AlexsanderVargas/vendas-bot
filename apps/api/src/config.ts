@@ -14,6 +14,10 @@ export interface AppConfig {
   readonly supabaseServiceRoleKey: string
   /** Segredo HS256 (projetos legados). Vazio => verificação via JWKS. */
   readonly supabaseJwtSecret: string
+  /** Intervalo do polling de marketplaces no worker (segundos). */
+  readonly marketplacePollSeconds: number
+  /** Intervalo da fila fiscal no worker (segundos). */
+  readonly fiscalPollSeconds: number
   readonly rateLimitMax: number
   readonly rateLimitWindow: string
 }
@@ -44,6 +48,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     supabaseAnonKey: required(env, 'SUPABASE_ANON_KEY'),
     supabaseServiceRoleKey: required(env, 'SUPABASE_SERVICE_ROLE_KEY'),
     supabaseJwtSecret: env.SUPABASE_JWT_SECRET ?? '',
+    // 30s é o intervalo que o iFood recomenda para o polling de eventos.
+    marketplacePollSeconds: intOr(env.MARKETPLACE_POLL_SECONDS, 30),
+    fiscalPollSeconds: intOr(env.FISCAL_POLL_SECONDS, 60),
     rateLimitMax: intOr(env.RATE_LIMIT_MAX, 100),
     rateLimitWindow: env.RATE_LIMIT_WINDOW ?? '1 minute',
   }

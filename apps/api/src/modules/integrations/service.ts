@@ -179,3 +179,82 @@ export async function processEvents(deps: {
 
   return summary
 }
+
+/** Colunas que runSyncCycle precisa carregar de cada tabela. */
+export const SYNC_INTEGRATION_COLUMNS =
+  'id, tenant_id, channel, external_store_id, auto_accept, is_receiving'
+export const CREDENTIAL_COLUMNS =
+  'integration_id, client_id, client_secret, access_token, token_expires_at, webhook_secret'
+
+export class SyncCycleError extends Error {
+  constructor(
+    override readonly message: string,
+    /** 'sem_credenciais' quando o canal ainda não foi conectado. */
+    readonly reason: 'sem_credenciais' | 'falha_no_parceiro',
+  ) {
+    super(message)
+    this.name = 'SyncCycleError'
+  }
+}
+
+/**
+ * Contrato: (deps) -> Promise<SyncSummary>
+ *
+ * Um ciclo completo de sincronização de UMA integração: carrega credenciais,
+ * consulta eventos no parceiro, processa e registra o resultado em
+ * `integrations` (last_sync_at ou last_error).
+ *
+ * Existe como função própria porque tem DOIS chamadores — a rota
+ * `/integrations/:id/sync`, acionada pelo painel, e o worker, que roda em
+ * laço. Duplicar isso faria as duas versões divergirem no primeiro ajuste.
+ *
+ * O erro do parceiro é gravado em `last_error` antes de ser relançado: assim
+ * ele aparece no painel do lojista em vez de sumir no log do servidor.
+ */
+export async function runSyncCycle(deps: {
+  integration: IntegrationRecord
+  supabaseAdmin: SupabaseClient
+  logger?: { warn: (details: unknown, message: string) => void }
+}): Promise<SyncSummary> {
+  const { integration, supabaseAdmin } = deps
+
+  const { data: credentials } = await supabaseAdmin
+    .from('integration_credentials')
+    .select(CREDENTIAL_COLUMNS)
+    .eq('integration_id', integration.id)
+    .maybeSingle()
+
+  if (!credentials) {
+    throw new SyncCycleError('Canal sem credenciais configuradas.', 'sem_credenciais')
+  }
+
+  const channel = buildChannel(integration, credentials as CredentialRecord, supabaseAdmin)
+
+  try {
+    const events = await channel.pollEvents()
+    const summary = await processEvents({
+      integration,
+      channel,
+      events,
+      supabaseAdmin,
+      logger: deps.logger,
+    })
+
+    await supabaseAdmin
+      .from('integrations')
+      .update({ last_sync_at: new Date().toISOString(), last_error: null })
+      .eq('id', integration.id)
+
+    return summary
+  } catch (error) {
+    await supabaseAdmin
+      .from('integrations')
+      .update({ status: 'error', last_error: (error as Error).message })
+      .eq('id', integration.id)
+
+    throw new SyncCycleError(
+      `Falha ao sincronizar com o parceiro: ${(error as Error).message}`,
+      'falha_no_parceiro',
+    )
+  }
+}

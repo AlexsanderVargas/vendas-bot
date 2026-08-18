@@ -34,7 +34,12 @@ cp apps/web/.env.example apps/web/.env.local
 
 npm run dev -w @vendas-bot/api    # http://localhost:3333
 npm run dev -w @vendas-bot/web    # http://localhost:3000
+npm run worker -w @vendas-bot/api # polling do iFood + fila de emissão fiscal
 ```
+
+O **worker** é um processo separado do servidor HTTP: o iFood não chama a
+aplicação (é polling) e a fila fiscal precisa de quem a consuma. Rode **uma
+única instância** — duas consultariam o iFood em dobro.
 
 Aplicar o schema: `supabase db push`, ou executar os arquivos de `supabase/migrations/` em ordem numérica no SQL Editor.
 
