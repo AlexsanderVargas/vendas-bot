@@ -72,3 +72,22 @@ export const OrderListQuery = Type.Object({
 })
 
 export const OrderParams = Type.Object({ id: Uuid })
+
+/** Evento da linha do tempo do pedido. */
+export const OrderStatusEvent = Type.Object({
+  id: Uuid,
+  status: OrderStatusSchema,
+  note: Type.Union([Type.String(), Type.Null()]),
+  createdAt: Type.String(),
+})
+
+export const AdvanceStatusInput = Type.Object({
+  status: OrderStatusSchema,
+  note: Type.Optional(Type.Union([Type.String({ maxLength: 200 }), Type.Null()])),
+})
+
+/** Contrato de saída da mudança de status. */
+export const AdvanceStatusResult = Type.Object({
+  id: Uuid,
+  status: OrderStatusSchema,
+})

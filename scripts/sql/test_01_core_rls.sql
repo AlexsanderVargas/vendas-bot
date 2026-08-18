@@ -199,10 +199,17 @@ select test.assert(
   and not public.is_staff_of('10000000-0000-0000-0000-000000000002'),
   'is_staff_of distingue o tenant do funcionário');
 
+-- O fluxo válido é placed -> confirmed -> preparing (ver can_transition_order).
+update public.orders set status = 'confirmed' where id = '50000000-0000-0000-0000-000000000001';
 update public.orders set status = 'preparing' where id = '50000000-0000-0000-0000-000000000001';
 select test.assert(
   (select status from public.orders where id = '50000000-0000-0000-0000-000000000001') = 'preparing',
   'staff avança o status do pedido (fluxo KDS)');
+
+select test.assert_denied(
+  $$update public.orders set status = 'delivered'
+    where id = '50000000-0000-0000-0000-000000000002'$$,
+  'salto de status inválido é rejeitado pelo guard');
 
 select test.assert_denied(
   $$insert into public.products (tenant_id, name, price)

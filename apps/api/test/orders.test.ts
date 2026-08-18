@@ -178,3 +178,33 @@ describe('POST /api/v1/orders/checkout', () => {
     expect(res.statusCode).toBe(401)
   })
 })
+
+describe('mapAdvanceError', () => {
+  it('mapeia pedido inexistente para 404', async () => {
+    const { mapAdvanceError } = await import('../src/modules/orders/service.js')
+    expect(mapAdvanceError('pedido_nao_encontrado').status).toBe(404)
+  })
+  it('mapeia falta de autorização para 403', async () => {
+    const { mapAdvanceError } = await import('../src/modules/orders/service.js')
+    expect(mapAdvanceError('nao_autorizado').status).toBe(403)
+  })
+  it('mapeia transição inválida para 409', async () => {
+    const { mapAdvanceError } = await import('../src/modules/orders/service.js')
+    const mapped = mapAdvanceError('transicao_invalida')
+    expect(mapped.status).toBe(409)
+    expect(mapped.message).toContain('não é permitida')
+  })
+})
+
+describe('máquina de transição compartilhada', () => {
+  it('espelha as regras da função SQL can_transition_order', async () => {
+    const { canTransition } = await import('@vendas-bot/shared')
+    expect(canTransition('placed', 'confirmed')).toBe(true)
+    expect(canTransition('placed', 'preparing')).toBe(false)
+    expect(canTransition('confirmed', 'preparing')).toBe(true)
+    expect(canTransition('ready', 'out_for_delivery')).toBe(true)
+    expect(canTransition('delivered', 'completed')).toBe(true)
+    expect(canTransition('completed', 'placed')).toBe(false)
+    expect(canTransition('canceled', 'confirmed')).toBe(false)
+  })
+})
