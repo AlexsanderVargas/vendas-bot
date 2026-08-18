@@ -38,6 +38,7 @@ export function createFakeSupabase(
 class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
   private filters: Filter[] = []
   private orderBy: string | null = null
+  private upserted: unknown[] | null = null
 
   constructor(private readonly rows: ReadonlyArray<Record<string, unknown>>) {}
 
@@ -64,6 +65,15 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
     return this
   }
 
+  upsert(rows: unknown): this {
+    this.upserted = Array.isArray(rows) ? rows : [rows]
+    return this
+  }
+
+  not(): this {
+    return this
+  }
+
   update(): this {
     return this
   }
@@ -73,7 +83,8 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
   }
 
   async single(): Promise<{ data: Record<string, unknown> | null; error: null }> {
-    return { data: this.resolve()[0] ?? null, error: null }
+    const upserted = this.upserted?.[0] as Record<string, unknown> | undefined
+    return { data: upserted ?? this.resolve()[0] ?? null, error: null }
   }
 
   private resolve(): Record<string, unknown>[] {
