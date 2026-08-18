@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { OrderTracker } from '@/components/orders/order-tracker'
+import { ReviewPrompt } from '@/components/orders/review-prompt'
 
 export default async function PedidoPage({
   params,
@@ -27,6 +28,12 @@ export default async function PedidoPage({
     .select('id, product_name, quantity, total')
     .eq('order_id', id)
 
+  // Avaliação só faz sentido depois da conclusão e uma única vez por pedido.
+  const concluido = order.status === 'delivered' || order.status === 'completed'
+  const { data: avaliacao } = concluido
+    ? await supabase.from('order_reviews').select('id').eq('order_id', id).maybeSingle()
+    : { data: null }
+
   return (
     <main className="mx-auto max-w-2xl px-4 pb-24">
       <OrderTracker
@@ -46,6 +53,7 @@ export default async function PedidoPage({
           })),
         }}
       />
+      {concluido && !avaliacao ? <ReviewPrompt orderId={id} /> : null}
     </main>
   )
 }

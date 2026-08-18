@@ -14,6 +14,7 @@ import menuRoutes from './modules/menu/routes.js'
 import addressRoutes from './modules/addresses/routes.js'
 import cartRoutes from './modules/cart/routes.js'
 import orderRoutes from './modules/orders/routes.js'
+import loyaltyRoutes from './modules/loyalty/routes.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -75,6 +76,7 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
       await api.register(addressRoutes)
       await api.register(cartRoutes)
       await api.register(orderRoutes)
+      await api.register(loyaltyRoutes)
     },
     { prefix: '/api/v1' },
   )

@@ -39,6 +39,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
   private filters: Filter[] = []
   private orderBy: string | null = null
   private upserted: unknown[] | null = null
+  private limitTo: number | null = null
+  private rangeFrom = 0
+  private rangeTo: number | null = null
 
   constructor(private readonly rows: ReadonlyArray<Record<string, unknown>>) {}
 
@@ -74,6 +77,17 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
     return this
   }
 
+  limit(count: number): this {
+    this.limitTo = count
+    return this
+  }
+
+  range(from: number, to: number): this {
+    this.rangeFrom = from
+    this.rangeTo = to
+    return this
+  }
+
   update(): this {
     return this
   }
@@ -98,6 +112,12 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
     if (this.orderBy) {
       const key = this.orderBy
       result = [...result].sort((a, b) => Number(a[key] ?? 0) - Number(b[key] ?? 0))
+    }
+    if (this.rangeTo !== null) {
+      result = result.slice(this.rangeFrom, this.rangeTo + 1)
+    }
+    if (this.limitTo !== null) {
+      result = result.slice(0, this.limitTo)
     }
     return result as Record<string, unknown>[]
   }
