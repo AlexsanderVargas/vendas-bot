@@ -3,14 +3,18 @@ import { Type } from '@sinclair/typebox'
 import { StandardErrors } from '@vendas-bot/shared'
 import { resolveCustomerContext } from '../../lib/customer.js'
 import {
+  AdvanceStatusInput,
+  AdvanceStatusResult,
   CheckoutInput,
   CheckoutResult,
   Order,
   OrderListQuery,
   OrderParams,
+  OrderStatusEvent,
 } from './schemas.js'
 import {
   listOrders,
+  mapAdvanceError,
   mapCheckoutError,
   ORDER_COLUMNS,
   ORDER_ITEM_COLUMNS,
@@ -153,6 +157,67 @@ const orderRoutes: FastifyPluginAsyncTypebox = async (app) => {
         .eq('order_id', request.params.id)
 
       return toOrder(order, items ?? [])
+    },
+  )
+
+  app.get(
+    '/orders/:id/timeline',
+    {
+      onRequest: app.requireAuth,
+      schema: {
+        tags: ['pedidos'],
+        description: 'Linha do tempo de status do pedido (base do rastreamento).',
+        params: OrderParams,
+        response: { 200: Type.Array(OrderStatusEvent), ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const { data, error } = await request.supabase
+        .from('order_status_events')
+        .select('id, status, note, created_at')
+        .eq('order_id', request.params.id)
+        .order('created_at', { ascending: true })
+
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      return (data ?? []).map((row: Record<string, unknown>) => ({
+        id: String(row.id),
+        status: row.status as never,
+        note: (row.note as string | null) ?? null,
+        createdAt: String(row.created_at),
+      }))
+    },
+  )
+
+  app.patch(
+    '/orders/:id/status',
+    {
+      onRequest: app.requireAuth,
+      schema: {
+        tags: ['pedidos'],
+        description:
+          'Avança o status do pedido. Staff conduz o fluxo; o cliente só pode cancelar antes da confirmação.',
+        params: OrderParams,
+        body: AdvanceStatusInput,
+        response: { 200: AdvanceStatusResult, ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const { data, error } = await request.supabase.rpc('advance_order_status', {
+        p_order_id: request.params.id,
+        p_status: request.body.status,
+        p_note: request.body.note ?? null,
+      })
+
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      const result = data as { ok: boolean; error: string | null; status: string | null }
+      if (!result.ok) {
+        const mapped = mapAdvanceError(result.error ?? 'desconhecido')
+        throw app.httpErrors.createError(mapped.status, mapped.message)
+      }
+
+      return { id: request.params.id, status: request.body.status }
     },
   )
 }

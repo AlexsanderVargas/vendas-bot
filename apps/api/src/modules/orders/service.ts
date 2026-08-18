@@ -156,3 +156,23 @@ export function mapCheckoutError(error: string): { status: number; message: stri
   const message = CHECKOUT_ERROR_MESSAGE[error] ?? 'Não foi possível concluir o pedido.'
   return { status, message }
 }
+
+export const ADVANCE_ERROR_STATUS: Record<string, number> = {
+  pedido_nao_encontrado: 404,
+  nao_autorizado: 403,
+  transicao_invalida: 409,
+}
+
+export const ADVANCE_ERROR_MESSAGE: Record<string, string> = {
+  pedido_nao_encontrado: 'Pedido não encontrado.',
+  nao_autorizado: 'Você não pode alterar o status deste pedido.',
+  transicao_invalida: 'Esta mudança de status não é permitida a partir do estado atual.',
+}
+
+/** Contrato: (error) -> { status, message } */
+export function mapAdvanceError(error: string): { status: number; message: string } {
+  return {
+    status: ADVANCE_ERROR_STATUS[error] ?? 400,
+    message: ADVANCE_ERROR_MESSAGE[error] ?? 'Não foi possível alterar o status do pedido.',
+  }
+}
