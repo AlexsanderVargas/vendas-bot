@@ -114,7 +114,119 @@ export function toFiscalDocument(row: DocumentRow) {
   }
 }
 
+const FISCAL_ERROR: Record<string, { status: number; message: string }> = {
+  pedido_nao_encontrado: { status: 404, message: 'Pedido não encontrado.' },
+  documento_nao_encontrado: { status: 404, message: 'Documento fiscal não encontrado.' },
+  nao_autorizado: { status: 403, message: 'Documento de outro estabelecimento.' },
+  fiscal_desabilitado: { status: 409, message: 'Emissão fiscal não está habilitada para este estabelecimento.' },
+  pedido_nao_concluido: { status: 409, message: 'Só é possível emitir documento de pedido concluído.' },
+  documento_ja_existe: { status: 409, message: 'Este pedido já tem documento fiscal em aberto ou autorizado.' },
+  tributacao_ausente: { status: 400, message: 'Há itens sem tributação definida. Cadastre o NCM/CFOP antes de emitir.' },
+  documento_nao_autorizado: { status: 409, message: 'Só documento autorizado pode ser cancelado.' },
+  prazo_expirado: { status: 409, message: 'Prazo legal de cancelamento expirado.' },
+  justificativa_curta: { status: 400, message: 'A justificativa precisa de ao menos 15 caracteres.' },
+  retorno_incompleto: { status: 502, message: 'O emissor devolveu autorização sem chave ou protocolo.' },
+}
+
+/** Contrato: (error) -> { status, message } */
+export function mapFiscalError(error: string): { status: number; message: string } {
+  return FISCAL_ERROR[error] ?? { status: 400, message: 'Não foi possível concluir a operação fiscal.' }
+}
+
 const fiscalRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  app.post(
+    '/fiscal/documents',
+    {
+      onRequest: app.requirePermission('fiscal.write'),
+      schema: {
+        tags: ['fiscal'],
+        description:
+          'Coloca o documento fiscal de um pedido na fila de emissão. Em contingência, o documento já nasce numerado.',
+        body: Type.Object({
+          orderId: Uuid,
+          model: Type.Optional(ModelSchema),
+          contingency: Type.Optional(Type.Boolean()),
+        }),
+        response: {
+          201: Type.Object({
+            documentId: Uuid,
+            number: Type.Union([Type.Integer(), Type.Null()]),
+            status: DocumentStatusSchema,
+          }),
+          ...StandardErrors,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { data, error } = await request.supabase.rpc('enqueue_fiscal_document', {
+        p_order_id: request.body.orderId,
+        p_model: request.body.model ?? 'nfce',
+        p_contingency: request.body.contingency ?? false,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      const result = data as {
+        ok: boolean
+        error: string | null
+        documentId: string | null
+        number: number | null
+        status: string | null
+      }
+      if (!result.ok || !result.documentId) {
+        const mapped = mapFiscalError(result.error ?? 'desconhecido')
+        throw app.httpErrors.createError(mapped.status, mapped.message)
+      }
+
+      return reply.status(201).send({
+        documentId: result.documentId,
+        number: result.number === null ? null : Number(result.number),
+        status: result.status as never,
+      })
+    },
+  )
+
+  app.post(
+    '/fiscal/documents/:id/cancel',
+    {
+      onRequest: app.requirePermission('fiscal.write'),
+      schema: {
+        tags: ['fiscal'],
+        description: 'Cancela um documento autorizado dentro do prazo legal.',
+        params: Type.Object({ id: Uuid }),
+        body: Type.Object({ reason: Type.String({ minLength: 15, maxLength: 255 }) }),
+        response: {
+          200: Type.Object({
+            minutesElapsed: Type.Integer(),
+            windowMinutes: Type.Integer(),
+          }),
+          ...StandardErrors,
+        },
+      },
+    },
+    async (request) => {
+      const { data, error } = await request.supabase.rpc('cancel_fiscal_document', {
+        p_document_id: request.params.id,
+        p_reason: request.body.reason,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      const result = data as {
+        ok: boolean
+        error: string | null
+        minutesElapsed: number | null
+        windowMinutes: number | null
+      }
+      if (!result.ok) {
+        const mapped = mapFiscalError(result.error ?? 'desconhecido')
+        throw app.httpErrors.createError(mapped.status, mapped.message)
+      }
+      return {
+        minutesElapsed: Number(result.minutesElapsed ?? 0),
+        windowMinutes: Number(result.windowMinutes ?? 0),
+      }
+    },
+  )
+
   app.get(
     '/fiscal/tax-profile/:productId',
     {
