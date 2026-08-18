@@ -7,9 +7,13 @@ import { createClient } from '@/lib/supabase/server'
 const NAV = [
   { href: '/painel', label: 'Visão geral' },
   { href: '/painel/insumos', label: 'Insumos' },
+  { href: '/painel/salao', label: 'Salão' },
+  { href: '/painel/comandas', label: 'Comandas' },
+  { href: '/painel/cozinha', label: 'Cozinha' },
   { href: '/painel/estoque', label: 'Estoque' },
   { href: '/painel/fichas', label: 'Fichas técnicas' },
   { href: '/painel/fornecedores', label: 'Fornecedores' },
+  { href: '/painel/equipe', label: 'Equipe' },
 ]
 
 export default async function PainelLayout({ children }: { children: ReactNode }) {
