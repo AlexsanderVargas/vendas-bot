@@ -5,6 +5,9 @@ on:
     branches: ['main', 'feat/**']
   pull_request:
     branches: ['main', 'feat/**']
+  # Chamado por deploy.yml: nada é publicado sem passar por estes três jobs,
+  # e reutilizar em vez de copiar impede que as duas cópias divirjam.
+  workflow_call:
 
 jobs:
   database:
