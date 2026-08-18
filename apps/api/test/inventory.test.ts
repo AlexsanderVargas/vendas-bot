@@ -127,3 +127,122 @@ describe('rotas de estoque', () => {
     expect(res.statusCode).toBe(400)
   })
 })
+
+describe('mapStockError', () => {
+  it('mapeia insumo inexistente para 404', async () => {
+    const { mapStockError } = await import('../src/modules/inventory/service.js')
+    expect(mapStockError('insumo_nao_encontrado').status).toBe(404)
+  })
+  it('mapeia insumo de outro tenant para 403', async () => {
+    const { mapStockError } = await import('../src/modules/inventory/service.js')
+    expect(mapStockError('nao_autorizado').status).toBe(403)
+  })
+  it('mapeia validade obrigatória para 400 com mensagem própria', async () => {
+    const { mapStockError } = await import('../src/modules/inventory/service.js')
+    const mapped = mapStockError('validade_obrigatoria')
+    expect(mapped.status).toBe(400)
+    expect(mapped.message).toContain('data de validade')
+  })
+  it('mapeia estoque insuficiente para 409', async () => {
+    const { mapStockError } = await import('../src/modules/inventory/service.js')
+    expect(mapStockError('estoque_insuficiente').status).toBe(409)
+  })
+})
+
+describe('rotas de movimentação de estoque', () => {
+  let stockApp: FastifyInstance
+  beforeAll(async () => {
+    stockApp = await buildTestServer()
+    stockApp.addHook('onRequest', async (request) => {
+      const fake = createFakeSupabase(TABLES, {
+        receive_stock: (params) => {
+          if (Number(params.p_quantity) > 1000) {
+            return { ok: false, error: 'nao_autorizado', batchId: null, stockQuantity: 0, averageCost: 0 }
+          }
+          return {
+            ok: true, error: null, batchId: 'c0000000-0000-0000-0000-000000000001',
+            stockQuantity: '1600.000', averageCost: '0.0500',
+          }
+        },
+        consume_stock: (params) => {
+          const wanted = Number(params.p_quantity)
+          if (wanted > 500) {
+            return { ok: false, error: 'estoque_insuficiente', consumed: '500.000', stockQuantity: '0.000', batches: [] }
+          }
+          return { ok: true, error: null, consumed: String(wanted), stockQuantity: '100.000', batches: [] }
+        },
+      })
+      request.supabase = fake
+      Object.defineProperty(stockApp, 'supabaseAdmin', { value: fake, configurable: true })
+    })
+  })
+  afterAll(async () => {
+    await stockApp.close()
+  })
+
+  it('registra entrada de mercadoria', async () => {
+    const res = await stockApp.inject({
+      method: 'POST',
+      url: '/api/v1/ingredients/b0000000-0000-0000-0000-000000000001/receive',
+      headers: bearer(await staffToken()),
+      payload: { quantity: 1000, unitCost: 0.05, expiresAt: '2026-09-30' },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(res.json()).toEqual({
+      batchId: 'c0000000-0000-0000-0000-000000000001',
+      stockQuantity: 1600,
+      averageCost: 0.05,
+    })
+  })
+
+  it('rejeita entrada com quantidade zero', async () => {
+    const res = await stockApp.inject({
+      method: 'POST',
+      url: '/api/v1/ingredients/b0000000-0000-0000-0000-000000000001/receive',
+      headers: bearer(await staffToken()),
+      payload: { quantity: 0, unitCost: 1 },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('propaga recusa de insumo de outro estabelecimento', async () => {
+    const res = await stockApp.inject({
+      method: 'POST',
+      url: '/api/v1/ingredients/b0000000-0000-0000-0000-000000000001/receive',
+      headers: bearer(await staffToken()),
+      payload: { quantity: 5000, unitCost: 1 },
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('baixa estoque e informa quando falta (sem tratar como erro)', async () => {
+    const res = await stockApp.inject({
+      method: 'POST',
+      url: '/api/v1/ingredients/b0000000-0000-0000-0000-000000000001/consume',
+      headers: bearer(await staffToken()),
+      payload: { quantity: 900, type: 'out', reason: 'Produção' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ consumed: 500, stockQuantity: 0, shortage: true })
+  })
+
+  it('baixa normal não sinaliza falta', async () => {
+    const res = await stockApp.inject({
+      method: 'POST',
+      url: '/api/v1/ingredients/b0000000-0000-0000-0000-000000000001/consume',
+      headers: bearer(await staffToken()),
+      payload: { quantity: 100 },
+    })
+    expect(res.json().shortage).toBe(false)
+  })
+
+  it('rejeita tipo de movimentação desconhecido', async () => {
+    const res = await stockApp.inject({
+      method: 'POST',
+      url: '/api/v1/ingredients/b0000000-0000-0000-0000-000000000001/consume',
+      headers: bearer(await staffToken()),
+      payload: { quantity: 10, type: 'roubo' },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+})

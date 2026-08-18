@@ -60,3 +60,47 @@ export const IngredientListQuery = Type.Object({
 })
 
 export const IdParams = Type.Object({ id: Uuid })
+
+export const ReceiveStockInput = Type.Object({
+  quantity: Type.Number({ exclusiveMinimum: 0 }),
+  unitCost: Type.Number({ minimum: 0 }),
+  expiresAt: Type.Optional(Type.Union([Type.String({ format: 'date' }), Type.Null()])),
+  supplierId: Type.Optional(Type.Union([Uuid, Type.Null()])),
+  batchCode: Type.Optional(Type.Union([Type.String({ maxLength: 60 }), Type.Null()])),
+})
+
+/** Contrato de saída da entrada de mercadoria. */
+export const StockOperationResult = Type.Object({
+  batchId: Type.Union([Uuid, Type.Null()]),
+  stockQuantity: Type.Number(),
+  averageCost: Type.Number(),
+})
+
+export const ConsumeStockInput = Type.Object({
+  quantity: Type.Number({ exclusiveMinimum: 0 }),
+  type: Type.Optional(
+    Type.Union([Type.Literal('out'), Type.Literal('loss'), Type.Literal('adjust')]),
+  ),
+  reason: Type.Optional(Type.Union([Type.String({ maxLength: 200 }), Type.Null()])),
+})
+
+/** Contrato de saída da baixa: shortage indica que faltou estoque. */
+export const ConsumeResult = Type.Object({
+  consumed: Type.Number(),
+  stockQuantity: Type.Number(),
+  shortage: Type.Boolean(),
+})
+
+export const StockMovement = Type.Object({
+  id: Uuid,
+  type: Type.Union([
+    Type.Literal('in'),
+    Type.Literal('out'),
+    Type.Literal('loss'),
+    Type.Literal('adjust'),
+  ]),
+  quantity: Type.Number(),
+  unitCost: Type.Number(),
+  reason: Type.Union([Type.String(), Type.Null()]),
+  createdAt: Type.String(),
+})
