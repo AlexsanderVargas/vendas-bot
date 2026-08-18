@@ -9,6 +9,8 @@ import {
   IngredientInput,
   IngredientListQuery,
   ReceiveStockInput,
+  StockAlert,
+  StockAlertQuery,
   StockMovement,
   StockOperationResult,
   Supplier,
@@ -180,6 +182,38 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
 
       if (error) throw app.httpErrors.badRequest(error.message)
       return reply.status(201).send(toIngredient(data))
+    },
+  )
+
+  app.get(
+    '/stock/alerts',
+    {
+      onRequest: app.requirePermission('inventory.read'),
+      schema: {
+        tags: ['estoque'],
+        description: 'Insumos abaixo do mínimo e lotes vencidos ou a vencer.',
+        querystring: StockAlertQuery,
+        response: { 200: Type.Array(StockAlert), ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const tenantId = request.requireTenantId()
+      const { data, error } = await request.supabase.rpc('stock_alerts', {
+        p_tenant_id: tenantId,
+        p_expiring_days: request.query.expiringDays,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      return (data ?? []).map((row: Record<string, unknown>) => ({
+        kind: row.kind as never,
+        ingredientId: String(row.ingredient_id),
+        ingredientName: String(row.ingredient_name),
+        baseUnit: row.base_unit as never,
+        quantity: Number(row.quantity),
+        threshold: row.threshold === null ? null : Number(row.threshold),
+        expiresAt: (row.expires_at as string | null) ?? null,
+        batchCode: (row.batch_code as string | null) ?? null,
+      }))
     },
   )
 
