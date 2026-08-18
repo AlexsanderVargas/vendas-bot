@@ -81,6 +81,7 @@ Esta seção existe para não confundir "implementado" com "homologado".
 - **API**: **394 testes** com `fastify.inject`, cobrindo contratos de entrada e saída, autenticação, autorização por permissão, e o mapeamento de erros de negócio para status HTTP.
 - **Frontend**: `tsc --noEmit` e `next build` sem erros.
 - **CI**: `.github/workflows/ci.yml` roda banco (PostGIS), typecheck, testes e build a cada push e pull request.
+- **Entrega contínua**: `.github/workflows/deploy.yml` aplica as migrations no Supabase e publica o frontend na Vercel a cada push na `main` — sempre nesta ordem, e só depois de o CI passar. Os segredos necessários estão em [docs/homologacao.md](docs/homologacao.md#entrega-contínua).
 
 ### NÃO verificado contra ambientes reais
 

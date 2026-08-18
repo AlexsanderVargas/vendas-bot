@@ -1,0 +1,116 @@
+name: Deploy
+
+# Todo push na main aplica as migrations e publica o frontend.
+on:
+  push:
+    branches: ['main']
+  workflow_dispatch:
+
+# Uma entrega por vez. cancel-in-progress FALSE de propósito: abortar um
+# `supabase db push` pela metade deixa o schema num estado que ninguém
+# escreveu — esperar a anterior terminar é sempre melhor.
+concurrency:
+  group: deploy-producao
+  cancel-in-progress: false
+
+jobs:
+  # 1. Nada é publicado sem passar na verificação. Reutiliza o CI em vez de
+  #    copiar os jobs, para as duas definições não divergirem.
+  verificar:
+    name: Verificação
+    uses: ./.github/workflows/ci.yml
+
+  # 2. Migrations ANTES do deploy: o frontend novo pode depender de coluna
+  #    nova, e publicar primeiro deixaria a aplicação quebrada na janela
+  #    entre as duas etapas.
+  migrar:
+    name: Migrations no Supabase
+    needs: verificar
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Conferir segredos
+        env:
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SENHA: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          faltando=()
+          [[ -z "$TOKEN" ]] && faltando+=(SUPABASE_ACCESS_TOKEN)
+          [[ -z "$REF"   ]] && faltando+=(SUPABASE_PROJECT_REF)
+          [[ -z "$SENHA" ]] && faltando+=(SUPABASE_DB_PASSWORD)
+          if (( ${#faltando[@]} )); then
+            echo "::error::Segredos ausentes: ${faltando[*]}."
+            echo "::error::Cadastre em Settings > Secrets and variables > Actions. Veja docs/homologacao.md."
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Aplicar migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+          # As migrations são append-only: o push aplica só o que ainda não
+          # está registrado, então reexecutar um commit já entregue é inócuo.
+          supabase db push
+
+  # 3. Publicação. Só depois do schema estar pronto.
+  publicar:
+    name: Deploy na Vercel
+    needs: migrar
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Conferir segredos
+        env:
+          TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          faltando=()
+          [[ -z "$TOKEN" ]] && faltando+=(VERCEL_TOKEN)
+          [[ -z "$VERCEL_ORG_ID" ]] && faltando+=(VERCEL_ORG_ID)
+          [[ -z "$VERCEL_PROJECT_ID" ]] && faltando+=(VERCEL_PROJECT_ID)
+          if (( ${#faltando[@]} )); then
+            echo "::error::Segredos ausentes: ${faltando[*]}."
+            echo "::error::ORG_ID e PROJECT_ID saem de .vercel/project.json após 'vercel link'. Veja docs/homologacao.md."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # O pacote compartilhado emite dist/ e é consumido pelo web; sem isto o
+      # build na Vercel não resolve @vendas-bot/shared.
+      - run: npm run build:shared
+
+      - name: Instalar a CLI da Vercel
+        run: npm i -g vercel@latest
+
+      - name: Buscar a configuração do projeto
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Compilar
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Publicar
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "### Publicado" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"

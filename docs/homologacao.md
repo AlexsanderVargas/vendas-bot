@@ -368,6 +368,76 @@ token antigo não o tem.
 
 ---
 
+## Entrega contínua
+
+`.github/workflows/deploy.yml` roda a cada push na `main`, nesta ordem:
+
+```
+verificar  →  migrar  →  publicar
+(CI: banco,    (supabase    (vercel
+ testes,        db push)     deploy --prod)
+ build)
+```
+
+Três decisões embutidas no pipeline:
+
+- **Nada é publicado sem passar na verificação.** O job `verificar` reutiliza o
+  `ci.yml` inteiro via `workflow_call` — reutilizar em vez de copiar impede que
+  as duas definições divirjam com o tempo.
+- **Migration antes do deploy.** O frontend novo pode depender de coluna nova;
+  publicar primeiro deixaria a aplicação quebrada na janela entre as etapas.
+- **`cancel-in-progress: false`.** Abortar um `supabase db push` pela metade
+  deixa o schema num estado que ninguém escreveu. Esperar a entrega anterior
+  terminar é sempre melhor.
+
+Reexecutar um commit já entregue é inócuo: as migrations são append-only e o
+`db push` aplica só o que ainda não está registrado.
+
+### Segredos a cadastrar
+
+Em *Settings → Secrets and variables → Actions*:
+
+| Segredo | Onde obter |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | Supabase → Account → Access Tokens |
+| `SUPABASE_PROJECT_REF` | o ref do projeto (aparece na URL do painel) |
+| `SUPABASE_DB_PASSWORD` | senha do banco, definida na criação do projeto |
+| `VERCEL_TOKEN` | Vercel → Settings → Tokens |
+| `VERCEL_ORG_ID` | `.vercel/project.json`, após rodar `vercel link` |
+| `VERCEL_PROJECT_ID` | idem |
+
+Faltando qualquer um, o job para com a mensagem dizendo **qual** falta — não
+com um erro críptico da CLI.
+
+### Configuração do projeto na Vercel
+
+O repositório é um monorepo com npm workspaces, e `apps/web` depende de
+`packages/shared`. Se a *Root Directory* apontar para `apps/web`, o build não
+resolve `@vendas-bot/shared`. Configure assim:
+
+| Campo | Valor |
+|---|---|
+| Root Directory | **raiz do repositório** (deixe vazio) |
+| Build Command | `npm run build:shared && npm run build -w @vendas-bot/web` |
+| Output Directory | `apps/web/.next` |
+| Install Command | `npm ci` |
+
+E as variáveis de ambiente do projeto na Vercel: `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` e `NEXT_PUBLIC_API_URL`.
+
+### O que o pipeline NÃO faz
+
+- **Não publica a API.** Só o frontend vai para a Vercel; o backend Fastify e o
+  worker precisam de um host Node (Railway, Render, Fly) com deploy próprio.
+- **Não roda o seed.** Dados de demonstração são uma decisão manual, não algo
+  que se reaplica a cada push.
+- **Não faz rollback.** Se uma migration falhar no meio, o deploy não acontece
+  (o job `publicar` depende do `migrar`), mas o schema fica no estado parcial em
+  que a migration parou. Migrations pequenas e reversíveis continuam sendo
+  responsabilidade de quem as escreve.
+
+---
+
 ## Checklist
 
 | Módulo | Verificado quando |
