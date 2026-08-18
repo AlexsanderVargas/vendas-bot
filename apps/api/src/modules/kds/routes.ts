@@ -10,6 +10,10 @@ const PrepStatusSchema = Type.Union(PREP_STATUSES.map((status) => Type.Literal(s
 const QueueItem = Type.Object({
   orderId: Uuid,
   orderNumber: Type.Integer(),
+  /** Canal de venda: próprio, iFood ou Uber Eats. */
+  origin: Type.Union([Type.Literal('own'), Type.Literal('ifood'), Type.Literal('ubereats')]),
+  /** Código curto do parceiro, que o entregador informa. */
+  externalDisplayId: Type.Union([Type.String(), Type.Null()]),
   channel: Type.String(),
   tableLabel: Type.Union([Type.String(), Type.Null()]),
   itemId: Uuid,
@@ -53,7 +57,8 @@ const kdsRoutes: FastifyPluginAsyncTypebox = async (app) => {
     },
     async (request) => {
       const tenantId = request.requireTenantId()
-      const { data, error } = await request.supabase.rpc('kds_queue', { p_tenant_id: tenantId })
+      // v2 traz a origem do pedido; a v1 segue disponível para quem a consome.
+      const { data, error } = await request.supabase.rpc('kds_queue_v2', { p_tenant_id: tenantId })
       if (error) throw app.httpErrors.internalServerError(error.message)
 
       return (data ?? []).map((row: Record<string, unknown>) => {
@@ -63,6 +68,8 @@ const kdsRoutes: FastifyPluginAsyncTypebox = async (app) => {
         return {
           orderId: String(row.order_id),
           orderNumber: Number(row.order_number),
+          origin: (row.origin ?? 'own') as 'own' | 'ifood' | 'ubereats',
+          externalDisplayId: (row.external_display_id as string | null) ?? null,
           channel: String(row.channel),
           tableLabel: (row.table_label as string | null) ?? null,
           itemId: String(row.item_id),

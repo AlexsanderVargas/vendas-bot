@@ -24,6 +24,8 @@ import cashRoutes from './modules/cash/routes.js'
 import paymentRoutes from './modules/payments/routes.js'
 import financeRoutes from './modules/finance/routes.js'
 import fiscalRoutes from './modules/fiscal/routes.js'
+import integrationRoutes from './modules/integrations/routes.js'
+import marketplaceWebhooks from './modules/integrations/webhooks.js'
 import webhookRoutes from './modules/payments/webhooks.js'
 
 declare module 'fastify' {
@@ -96,8 +98,10 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
       await api.register(paymentRoutes)
       await api.register(financeRoutes)
       await api.register(fiscalRoutes)
+      await api.register(integrationRoutes)
       // Escopo próprio: o parser de corpo cru não pode vazar para as demais rotas.
       await api.register(webhookRoutes, { prefix: '/webhooks' })
+      await api.register(marketplaceWebhooks, { prefix: '/webhooks/marketplace' })
     },
     { prefix: '/api/v1' },
   )
