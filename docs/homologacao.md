@@ -460,6 +460,13 @@ tsconfig.base.json
 
 Rode **uma única instância** do worker: duas consultariam o iFood em dobro.
 
+**Node 22 é obrigatório, não preferência.** O `@supabase/supabase-js` monta um
+cliente de realtime no `createClient`, e esse cliente exige `WebSocket` global —
+que só existe nativamente a partir do Node 22. No Node 20 a API nem sobe: morre
+no boot com `Error: Node.js detected but native WebSocket not found`. O
+`engines.node` da raiz e o `.nvmrc` fixam a versão para os hosts que leem um ou
+outro; se o seu host ignorar ambos, defina a versão no painel dele.
+
 ### O que o pipeline NÃO faz
 
 - **Não publica a API.** Só o frontend vai para a Vercel; o backend Fastify e o

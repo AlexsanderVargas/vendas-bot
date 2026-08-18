@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "npm run build -w @vendas-bot/shared && npm run build -w @vendas-bot/api && npm run build -w @vendas-bot/web",
