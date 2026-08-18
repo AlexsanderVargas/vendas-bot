@@ -86,7 +86,193 @@ export function toAccount(row: AccountRow) {
   }
 }
 
+/** Contrato de saída do DRE simplificado. */
+const DreReport = Type.Object({
+  revenue: Type.Number(),
+  deliveryRevenue: Type.Number(),
+  discounts: Type.Number(),
+  cmv: Type.Number(),
+  grossProfit: Type.Number(),
+  grossMarginPercent: Type.Number(),
+  fixedExpenses: Type.Number(),
+  variableExpenses: Type.Number(),
+  netProfit: Type.Number(),
+  netMarginPercent: Type.Number(),
+  orderCount: Type.Integer(),
+  averageTicket: Type.Number(),
+})
+
+const CashFlowDay = Type.Object({
+  day: Type.String(),
+  inflow: Type.Number(),
+  outflow: Type.Number(),
+  net: Type.Number(),
+  runningBalance: Type.Number(),
+})
+
+const Projection = Type.Object({
+  basisDays: Type.Integer(),
+  dailyRevenue: Type.Number(),
+  dailyNetProfit: Type.Number(),
+  horizonDays: Type.Integer(),
+  projectedRevenue: Type.Number(),
+  projectedNetProfit: Type.Number(),
+  confidence: Type.Union([Type.Literal('low'), Type.Literal('medium'), Type.Literal('high')]),
+})
+
+const TopProduct = Type.Object({
+  productId: Type.Union([Uuid, Type.Null()]),
+  productName: Type.String(),
+  quantity: Type.Number(),
+  revenue: Type.Number(),
+  orderCount: Type.Integer(),
+})
+
+const PeriodQuery = Type.Object({
+  from: Type.Optional(Type.String({ format: 'date' })),
+  to: Type.Optional(Type.String({ format: 'date' })),
+})
+
 const financeRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  app.get(
+    '/reports/dre',
+    {
+      onRequest: app.requirePermission('reports.read'),
+      schema: {
+        tags: ['relatórios'],
+        description:
+          'DRE simplificado do período. O CMV é histórico: vem dos lotes consumidos, não do custo atual.',
+        querystring: PeriodQuery,
+        response: { 200: DreReport, ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const tenantId = request.requireTenantId()
+      const { data, error } = await request.supabase.rpc('dre_report', {
+        p_tenant_id: tenantId,
+        p_from: request.query.from ?? null,
+        p_to: request.query.to ?? null,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      const report = (data ?? {}) as Record<string, unknown>
+      return {
+        revenue: Number(report.revenue ?? 0),
+        deliveryRevenue: Number(report.deliveryRevenue ?? 0),
+        discounts: Number(report.discounts ?? 0),
+        cmv: Number(report.cmv ?? 0),
+        grossProfit: Number(report.grossProfit ?? 0),
+        grossMarginPercent: Number(report.grossMarginPercent ?? 0),
+        fixedExpenses: Number(report.fixedExpenses ?? 0),
+        variableExpenses: Number(report.variableExpenses ?? 0),
+        netProfit: Number(report.netProfit ?? 0),
+        netMarginPercent: Number(report.netMarginPercent ?? 0),
+        orderCount: Number(report.orderCount ?? 0),
+        averageTicket: Number(report.averageTicket ?? 0),
+      }
+    },
+  )
+
+  app.get(
+    '/reports/cash-flow',
+    {
+      onRequest: app.requirePermission('reports.read'),
+      schema: {
+        tags: ['relatórios'],
+        description: 'Entradas e saídas de caixa por dia, com saldo acumulado.',
+        querystring: PeriodQuery,
+        response: { 200: Type.Array(CashFlowDay), ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const tenantId = request.requireTenantId()
+      const { data, error } = await request.supabase.rpc('cash_flow_report', {
+        p_tenant_id: tenantId,
+        p_from: request.query.from ?? null,
+        p_to: request.query.to ?? null,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      return (data ?? []).map((row: Record<string, unknown>) => ({
+        day: String(row.day),
+        inflow: Number(row.inflow),
+        outflow: Number(row.outflow),
+        net: Number(row.net),
+        runningBalance: Number(row.running_balance),
+      }))
+    },
+  )
+
+  app.get(
+    '/reports/projection',
+    {
+      onRequest: app.requirePermission('reports.read'),
+      schema: {
+        tags: ['relatórios'],
+        description: 'Projeção linear de receita e lucro a partir da média diária observada.',
+        querystring: Type.Object({
+          lookbackDays: Type.Integer({ minimum: 1, maximum: 365, default: 30 }),
+          horizonDays: Type.Integer({ minimum: 1, maximum: 365, default: 30 }),
+        }),
+        response: { 200: Projection, ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const tenantId = request.requireTenantId()
+      const { data, error } = await request.supabase.rpc('profit_projection', {
+        p_tenant_id: tenantId,
+        p_lookback_days: request.query.lookbackDays,
+        p_horizon_days: request.query.horizonDays,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      const projection = (data ?? {}) as Record<string, unknown>
+      return {
+        basisDays: Number(projection.basisDays ?? 0),
+        dailyRevenue: Number(projection.dailyRevenue ?? 0),
+        dailyNetProfit: Number(projection.dailyNetProfit ?? 0),
+        horizonDays: Number(projection.horizonDays ?? 0),
+        projectedRevenue: Number(projection.projectedRevenue ?? 0),
+        projectedNetProfit: Number(projection.projectedNetProfit ?? 0),
+        confidence: (projection.confidence ?? 'low') as never,
+      }
+    },
+  )
+
+  app.get(
+    '/reports/top-products',
+    {
+      onRequest: app.requirePermission('reports.read'),
+      schema: {
+        tags: ['relatórios'],
+        description: 'Produtos mais vendidos no período, por receita.',
+        querystring: Type.Intersect([
+          PeriodQuery,
+          Type.Object({ limit: Type.Integer({ minimum: 1, maximum: 50, default: 10 }) }),
+        ]),
+        response: { 200: Type.Array(TopProduct), ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const tenantId = request.requireTenantId()
+      const { data, error } = await request.supabase.rpc('top_products_report', {
+        p_tenant_id: tenantId,
+        p_from: request.query.from ?? null,
+        p_to: request.query.to ?? null,
+        p_limit: request.query.limit,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      return (data ?? []).map((row: Record<string, unknown>) => ({
+        productId: (row.product_id as string | null) ?? null,
+        productName: String(row.product_name),
+        quantity: Number(row.quantity),
+        revenue: Number(row.revenue),
+        orderCount: Number(row.order_count),
+      }))
+    },
+  )
+
   app.get(
     '/finance/accounts',
     {

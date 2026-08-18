@@ -12,6 +12,7 @@ const NAV = [
   { href: '/painel/cozinha', label: 'Cozinha' },
   { href: '/painel/caixa', label: 'Caixa' },
   { href: '/painel/financeiro', label: 'Financeiro' },
+  { href: '/painel/relatorios', label: 'Relatórios' },
   { href: '/painel/estoque', label: 'Estoque' },
   { href: '/painel/fichas', label: 'Fichas técnicas' },
   { href: '/painel/fornecedores', label: 'Fornecedores' },
