@@ -5,6 +5,16 @@ export type TableRows = Record<string, ReadonlyArray<Record<string, unknown>>>
 /** Respostas de funções RPC, por nome. */
 export type RpcHandlers = Record<string, (params: Record<string, unknown>) => unknown>
 
+/** Registro do que foi escrito, para as asserções inspecionarem. */
+export interface FakeWrites {
+  inserted: { table: string; rows: Record<string, unknown>[] }[]
+  updated: { table: string; patch: Record<string, unknown> }[]
+  deleted: string[]
+  /** Caminhos assinados para envio e removidos do bucket. */
+  signed: string[]
+  removed: string[]
+}
+
 interface Filter {
   column: string
   value: unknown
@@ -22,10 +32,28 @@ interface Filter {
 export function createFakeSupabase(
   tables: TableRows,
   rpcs: RpcHandlers = {},
+  writes: FakeWrites = { inserted: [], updated: [], deleted: [], signed: [], removed: [] },
 ): SupabaseClient {
   return {
     from(table: string) {
-      return new FakeQuery(tables[table] ?? [])
+      return new FakeQuery(tables[table] ?? [], table, writes)
+    },
+    storage: {
+      from(bucket: string) {
+        return {
+          async createSignedUploadUrl(path: string) {
+            writes.signed.push(path)
+            return {
+              data: { path, token: `token-${bucket}`, signedUrl: `https://storage/${bucket}/${path}` },
+              error: null,
+            }
+          },
+          async remove(paths: string[]) {
+            writes.removed.push(...paths)
+            return { data: paths.map((name) => ({ name })), error: null }
+          },
+        }
+      },
     },
     async rpc(name: string, params: Record<string, unknown>) {
       const handler = rpcs[name]
@@ -43,7 +71,11 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
   private rangeFrom = 0
   private rangeTo: number | null = null
 
-  constructor(private readonly rows: ReadonlyArray<Record<string, unknown>>) {}
+  constructor(
+    private readonly rows: ReadonlyArray<Record<string, unknown>>,
+    private readonly table = 'desconhecida',
+    private readonly writes: FakeWrites | null = null,
+  ) {}
 
   select(): this {
     return this
@@ -69,7 +101,13 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
     return this
   }
 
-  insert(): this {
+  insert(rows?: unknown): this {
+    if (this.writes && rows !== undefined) {
+      this.writes.inserted.push({
+        table: this.table,
+        rows: (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[],
+      })
+    }
     return this
   }
 
@@ -93,11 +131,15 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
     return this
   }
 
-  update(): this {
+  update(patch?: unknown): this {
+    if (this.writes && patch !== undefined) {
+      this.writes.updated.push({ table: this.table, patch: patch as Record<string, unknown> })
+    }
     return this
   }
 
   delete(): this {
+    if (this.writes) this.writes.deleted.push(this.table)
     return this
   }
 

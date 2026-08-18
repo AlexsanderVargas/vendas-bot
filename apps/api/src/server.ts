@@ -26,6 +26,7 @@ import financeRoutes from './modules/finance/routes.js'
 import fiscalRoutes from './modules/fiscal/routes.js'
 import integrationRoutes from './modules/integrations/routes.js'
 import brandingRoutes from './modules/branding/routes.js'
+import mediaRoutes from './modules/media/routes.js'
 import marketplaceWebhooks from './modules/integrations/webhooks.js'
 import webhookRoutes from './modules/payments/webhooks.js'
 
@@ -101,6 +102,7 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
       await api.register(fiscalRoutes)
       await api.register(integrationRoutes)
       await api.register(brandingRoutes)
+      await api.register(mediaRoutes)
       // Escopo próprio: o parser de corpo cru não pode vazar para as demais rotas.
       await api.register(webhookRoutes, { prefix: '/webhooks' })
       await api.register(marketplaceWebhooks, { prefix: '/webhooks/marketplace' })
