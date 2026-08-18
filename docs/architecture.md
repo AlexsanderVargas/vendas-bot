@@ -40,6 +40,8 @@ flowchart LR
 | Vendas | `orders`, `order_items`, rastreamento de status |
 | Financeiro | PDV/caixa, pagamentos online, contas, DRE/CMV |
 | Fiscal | integração NFC-e / NF-e |
+| Marketplaces | integrações iFood/Uber Eats, mapa de itens, fila de eventos |
+| Identidade Visual | `tenant_branding`, biblioteca de mídias, tema servido por estabelecimento |
 
 ## Estratégia Multi-tenant
 
@@ -58,16 +60,50 @@ flowchart LR
 - **Realtime**: as subscriptions do Supabase dependem das políticas de `select` — o cliente só recebe eventos dos próprios pedidos; o KDS só recebe eventos do próprio tenant.
 - **Contratos estáveis**: funções SQL e endpoints têm contratos de entrada/saída imutáveis (ver [regras de engenharia](engineering-rules.md)).
 
+## White-label
+
+O produto é vendido para o restaurante, mas quem usa o cardápio é o cliente
+**dele**. Por isso a marca do SaaS não aparece na vitrine:
+
+- **Identidade no banco** (`tenant_branding`): cores validadas por
+  `is_hex_color()` e fonte restrita a uma lista fechada — os dois valores vão
+  para o CSS servido ao cliente final, onde texto livre seria injeção.
+- **Tema injetado no servidor**: o layout renderiza um `<style>` com as
+  variáveis da identidade, então o navegador nunca pinta a cor padrão antes
+  de trocar. Toda a paleta (`brand-50`…`brand-700`) deriva de
+  `--brand-primary` por `color-mix`, então trocar uma variável recoloriza a
+  aplicação inteira sem tocar em componente.
+- **Mídias isoladas pelo caminho**: os arquivos ficam em
+  `tenants/<tenant_id>/…` no Supabase Storage e as políticas do bucket
+  derivam o estabelecimento do próprio caminho — o cliente não escolhe o
+  tenant, o caminho escolhe por ele.
+
+## Marketplaces
+
+Pedidos de iFood e Uber Eats entram pelo mesmo caminho dos pedidos próprios
+(cozinha, estoque, relatórios), com duas diferenças deliberadas:
+
+- **O preço vem do parceiro**, não do catálogo interno: quem definiu o que o
+  cliente pagou foi o marketplace, e recalcular produziria um pedido que não
+  bate com o repasse.
+- **Item sem mapeamento não perde a venda**: entra no pedido mesmo assim e é
+  devolvido em `unmappedItems` para o lojista resolver depois.
+
+Idempotência por `(integration_id, external_event_id)`; evento que falha
+**não** é confirmado, para o parceiro reentregar.
+
 ## Roadmap (Features)
 
-Todas as seis features foram entregues e mescladas na `main`:
+Todas as oito features foram entregues e mescladas na `main`:
 
 1. **Fundação** — DB core + RLS/PostGIS · Backend Fastify · Frontend Next.js (PR #5)
 2. **Cardápio Digital & Delivery B2C** (PR #13)
 3. **Produtos & Insumos** — ficha técnica, estoque FIFO/FEFO (PR #19)
 4. **Operação Interna** — mesas, comandas, KDS, RBAC (PR #25)
 5. **Financeiro & Caixa** — PDV, pagamentos on-line, DRE/CMV (PR #31)
-6. **Fiscal & Tributário** — configuração tributária, fila de emissão
+6. **Fiscal & Tributário** — configuração tributária, fila de emissão (PR #35)
+7. **Marketplaces** — iFood e Uber Eats (PR #41)
+8. **Identidade Visual** — branding, biblioteca de mídias, tema aplicado
 
 O estado de verificação de cada módulo — o que está testado e o que **não** foi
 homologado contra ambientes reais — está no [README](../README.md#o-que-está-verificado-e-o-que-não-está).

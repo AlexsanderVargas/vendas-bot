@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/server'
+import { ThemeStyle } from '@/components/branding/theme-style'
+import { getBranding } from '@/lib/branding'
 
 /** Itens do painel interno. Cresce a cada módulo entregue. */
 const NAV = [
@@ -18,6 +20,8 @@ const NAV = [
   { href: '/painel/estoque', label: 'Estoque' },
   { href: '/painel/fichas', label: 'Fichas técnicas' },
   { href: '/painel/fornecedores', label: 'Fornecedores' },
+  { href: '/painel/identidade', label: 'Identidade visual' },
+  { href: '/painel/midias', label: 'Mídias' },
   { href: '/painel/equipe', label: 'Equipe' },
 ]
 
@@ -40,8 +44,18 @@ export default async function PainelLayout({ children }: { children: ReactNode }
     )
   }
 
+  // O painel também veste a marca do estabelecimento: quem passa o dia nele
+  // é a equipe do cliente, não a do SaaS.
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('slug')
+    .eq('id', tenantId)
+    .maybeSingle()
+  const branding = tenant ? await getBranding(String(tenant.slug)) : null
+
   return (
     <div className="mx-auto flex min-h-dvh max-w-6xl flex-col gap-6 px-4 py-6 md:flex-row">
+      {branding ? <ThemeStyle branding={branding} /> : null}
       <nav aria-label="Painel" className="md:w-52 md:shrink-0">
         <ul className="flex gap-2 overflow-x-auto md:flex-col md:overflow-visible">
           {NAV.map((item) => (
