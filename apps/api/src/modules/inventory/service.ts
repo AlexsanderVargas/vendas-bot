@@ -61,3 +61,27 @@ export function toSupplier(row: SupplierRow) {
 }
 
 export const SUPPLIER_COLUMNS = 'id, name, document, email, phone, contact_name, notes, is_active'
+
+const STOCK_ERROR_STATUS: Record<string, number> = {
+  insumo_nao_encontrado: 404,
+  nao_autorizado: 403,
+  validade_obrigatoria: 400,
+  quantidade_invalida: 400,
+  estoque_insuficiente: 409,
+}
+
+const STOCK_ERROR_MESSAGE: Record<string, string> = {
+  insumo_nao_encontrado: 'Insumo não encontrado.',
+  nao_autorizado: 'Este insumo pertence a outro estabelecimento.',
+  validade_obrigatoria: 'Insumo perecível exige a data de validade do lote.',
+  quantidade_invalida: 'Informe uma quantidade maior que zero.',
+  estoque_insuficiente: 'Estoque insuficiente para a baixa solicitada.',
+}
+
+/** Contrato: (error) -> { status, message } */
+export function mapStockError(error: string): { status: number; message: string } {
+  return {
+    status: STOCK_ERROR_STATUS[error] ?? 400,
+    message: STOCK_ERROR_MESSAGE[error] ?? 'Não foi possível concluir a operação de estoque.',
+  }
+}

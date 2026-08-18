@@ -2,15 +2,21 @@ import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { Type } from '@sinclair/typebox'
 import { StandardErrors } from '@vendas-bot/shared'
 import {
+  ConsumeResult,
+  ConsumeStockInput,
   IdParams,
   Ingredient,
   IngredientInput,
   IngredientListQuery,
+  ReceiveStockInput,
+  StockMovement,
+  StockOperationResult,
   Supplier,
   SupplierInput,
 } from './schemas.js'
 import {
   INGREDIENT_COLUMNS,
+  mapStockError,
   SUPPLIER_COLUMNS,
   toIngredient,
   toSupplier,
@@ -174,6 +180,114 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
 
       if (error) throw app.httpErrors.badRequest(error.message)
       return reply.status(201).send(toIngredient(data))
+    },
+  )
+
+  // ------------------------------ estoque -------------------------------------
+  app.post(
+    '/ingredients/:id/receive',
+    {
+      onRequest: app.requirePermission('inventory.write'),
+      schema: {
+        tags: ['estoque'],
+        description: 'Entrada de mercadoria: cria lote e recalcula o custo médio.',
+        params: IdParams,
+        body: ReceiveStockInput,
+        response: { 201: StockOperationResult, ...StandardErrors },
+      },
+    },
+    async (request, reply) => {
+      const { data, error } = await request.supabase.rpc('receive_stock', {
+        p_ingredient_id: request.params.id,
+        p_quantity: request.body.quantity,
+        p_unit_cost: request.body.unitCost,
+        p_expires_at: request.body.expiresAt ?? null,
+        p_supplier_id: request.body.supplierId ?? null,
+        p_batch_code: request.body.batchCode ?? null,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      const result = data as { ok: boolean; error: string | null; batchId: string | null; stockQuantity: number; averageCost: number }
+      if (!result.ok) {
+        const mapped = mapStockError(result.error ?? 'desconhecido')
+        throw app.httpErrors.createError(mapped.status, mapped.message)
+      }
+
+      return reply.status(201).send({
+        batchId: result.batchId,
+        stockQuantity: Number(result.stockQuantity),
+        averageCost: Number(result.averageCost),
+      })
+    },
+  )
+
+  app.post(
+    '/ingredients/:id/consume',
+    {
+      onRequest: app.requirePermission('inventory.write'),
+      schema: {
+        tags: ['estoque'],
+        description: 'Baixa manual de estoque (produção, perda ou ajuste), em ordem FEFO/FIFO.',
+        params: IdParams,
+        body: ConsumeStockInput,
+        response: { 200: ConsumeResult, ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const { data, error } = await request.supabase.rpc('consume_stock', {
+        p_ingredient_id: request.params.id,
+        p_quantity: request.body.quantity,
+        p_type: request.body.type ?? 'out',
+        p_reason: request.body.reason ?? null,
+        p_order_id: null,
+      })
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      const result = data as { ok: boolean; error: string | null; consumed: number; stockQuantity: number }
+      // Estoque insuficiente não é falha de requisição: o que havia foi baixado
+      // e a tela precisa mostrar quanto faltou.
+      if (!result.ok && result.error !== 'estoque_insuficiente') {
+        const mapped = mapStockError(result.error ?? 'desconhecido')
+        throw app.httpErrors.createError(mapped.status, mapped.message)
+      }
+
+      return {
+        consumed: Number(result.consumed),
+        stockQuantity: Number(result.stockQuantity),
+        shortage: result.error === 'estoque_insuficiente',
+      }
+    },
+  )
+
+  app.get(
+    '/ingredients/:id/movements',
+    {
+      onRequest: app.requirePermission('inventory.read'),
+      schema: {
+        tags: ['estoque'],
+        description: 'Extrato de movimentações do insumo.',
+        params: IdParams,
+        response: { 200: Type.Array(StockMovement), ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const { data, error } = await request.supabase
+        .from('stock_movements')
+        .select('id, type, quantity, unit_cost, reason, created_at')
+        .eq('ingredient_id', request.params.id)
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      if (error) throw app.httpErrors.internalServerError(error.message)
+
+      return (data ?? []).map((row: Record<string, unknown>) => ({
+        id: String(row.id),
+        type: row.type as never,
+        quantity: Number(row.quantity),
+        unitCost: Number(row.unit_cost),
+        reason: (row.reason as string | null) ?? null,
+        createdAt: String(row.created_at),
+      }))
     },
   )
 
