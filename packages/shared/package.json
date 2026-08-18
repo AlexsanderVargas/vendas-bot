@@ -11,13 +11,16 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.34.33"
+    "@sinclair/typebox": "^0.34.33",
+    "@supabase/supabase-js": "^2.58.0"
   },
   "devDependencies": {
     "typescript": "^5.9.2"
