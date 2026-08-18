@@ -13,6 +13,7 @@ import meRoutes from './modules/me/routes.js'
 import menuRoutes from './modules/menu/routes.js'
 import addressRoutes from './modules/addresses/routes.js'
 import cartRoutes from './modules/cart/routes.js'
+import orderRoutes from './modules/orders/routes.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -73,6 +74,7 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
       await api.register(menuRoutes)
       await api.register(addressRoutes)
       await api.register(cartRoutes)
+      await api.register(orderRoutes)
     },
     { prefix: '/api/v1' },
   )

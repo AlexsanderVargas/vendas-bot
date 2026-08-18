@@ -3,7 +3,6 @@ import type { Metadata } from 'next'
 import { getPublicMenu } from '@vendas-bot/shared'
 import { createClient } from '@/lib/supabase/server'
 import { MenuBrowser } from '@/components/menu/menu-browser'
-import { CartProvider } from '@/lib/cart/cart-context'
 import { TenantHeader } from '@/components/menu/tenant-header'
 
 interface PageProps {
@@ -43,9 +42,7 @@ export default async function MenuPage({ params }: PageProps) {
           Este cardápio ainda não tem itens publicados.
         </p>
       ) : (
-        <CartProvider tenantSlug={menu.tenant.slug}>
-          <MenuBrowser sections={sections} tenantSlug={menu.tenant.slug} />
-        </CartProvider>
+        <MenuBrowser sections={sections} tenantSlug={menu.tenant.slug} />
       )}
     </main>
   )

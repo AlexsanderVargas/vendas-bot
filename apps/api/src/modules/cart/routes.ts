@@ -11,7 +11,7 @@ const cartRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/cart',
     {
-      preHandler: app.requireAuth,
+      onRequest: app.requireAuth,
       schema: {
         tags: ['carrinho'],
         description: 'Carrinho persistido do cliente no estabelecimento.',
@@ -57,7 +57,7 @@ const cartRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.put(
     '/cart',
     {
-      preHandler: app.requireAuth,
+      onRequest: app.requireAuth,
       schema: {
         tags: ['carrinho'],
         description: 'Sincroniza o carrinho local com o banco (reengajamento).',

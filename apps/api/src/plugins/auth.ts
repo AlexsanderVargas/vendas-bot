@@ -16,7 +16,12 @@ export interface AuthContext {
 
 declare module 'fastify' {
   interface FastifyInstance {
-    /** preHandler: exige usuário autenticado (401 caso contrário). */
+    /**
+     * Exige usuário autenticado (401 caso contrário).
+     * Registrar como `onRequest` nas rotas: o hook de validação de schema do
+     * Fastify roda ANTES do preHandler, então um corpo inválido sem token
+     * responderia 400 em vez de 401.
+     */
     requireAuth: preHandlerHookHandler
     /** preHandler: exige funcionário vinculado a um tenant (403 caso contrário). */
     requireStaff: preHandlerHookHandler
