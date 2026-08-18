@@ -19,7 +19,7 @@ apps/api/               Backend Fastify
 apps/web/               Frontend Next.js (B2C + painel interno)
 packages/shared/        Contratos e regras compartilhadas entre API e web
 supabase/migrations/    Fonte da verdade do schema (append-only)
-scripts/                db-test.sh e as suítes de asserção SQL
+scripts/                db-test.sh, seed.sh e as suítes de asserção SQL
 docs/                   Arquitetura, regras de engenharia e notas de banco
 ```
 
@@ -52,6 +52,7 @@ integração — siga [docs/homologacao.md](docs/homologacao.md).
 npm run typecheck     # api + web + shared
 npm run test          # suíte de API (vitest)
 npm run db:test       # migrations + asserções de RLS e regras de negócio
+bash scripts/seed.sh  # estabelecimento de demonstração, para avaliar as telas com dados
 ```
 
 `scripts/db-test.sh` sobe um PostgreSQL descartável (ou usa o serviço do CI), aplica o stub do schema `auth` do Supabase, roda **todas** as migrations e executa as suítes de asserção. Qualquer asserção falsa aborta o script.
