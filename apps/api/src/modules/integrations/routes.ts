@@ -1,6 +1,8 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { Type } from '@sinclair/typebox'
 import { StandardErrors, Uuid } from '@vendas-bot/shared'
+import { buildChannel, processEvents } from './service.js'
+import type { CredentialRecord, IntegrationRecord } from './service.js'
 
 const ChannelSchema = Type.Union([Type.Literal('ifood'), Type.Literal('ubereats')])
 const StatusSchema = Type.Union([
@@ -74,7 +76,87 @@ export function toIntegration(row: IntegrationRow, hasCredentials: boolean) {
   }
 }
 
+const SyncSummary = Type.Object({
+  polled: Type.Integer(),
+  ingested: Type.Integer(),
+  duplicated: Type.Integer(),
+  failed: Type.Integer(),
+  /** Itens do parceiro sem produto interno: não baixam estoque. */
+  unmapped: Type.Array(Type.String()),
+})
+
 const integrationRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  app.post(
+    '/integrations/:id/sync',
+    {
+      onRequest: app.requirePermission('integrations.write'),
+      config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+      schema: {
+        tags: ['integrações'],
+        description:
+          'Roda um ciclo de sincronização do canal (polling do iFood). Canais por webhook não têm o que consultar.',
+        params: Type.Object({ id: Uuid }),
+        response: { 200: SyncSummary, ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const tenantId = request.requireTenantId()
+
+      const { data: integration } = await app.supabaseAdmin
+        .from('integrations')
+        .select('id, tenant_id, channel, external_store_id, auto_accept, is_receiving')
+        .eq('id', request.params.id)
+        .eq('tenant_id', tenantId)
+        .maybeSingle()
+
+      if (!integration) throw app.httpErrors.notFound('Integração não encontrada')
+
+      const { data: credentials } = await app.supabaseAdmin
+        .from('integration_credentials')
+        .select('integration_id, client_id, client_secret, access_token, token_expires_at, webhook_secret')
+        .eq('integration_id', integration.id)
+        .maybeSingle()
+
+      if (!credentials) {
+        throw app.httpErrors.badRequest('Canal sem credenciais configuradas.')
+      }
+
+      const channel = buildChannel(
+        integration as IntegrationRecord,
+        credentials as CredentialRecord,
+        app.supabaseAdmin,
+      )
+
+      try {
+        const events = await channel.pollEvents()
+        const summary = await processEvents({
+          integration: integration as IntegrationRecord,
+          channel,
+          events,
+          supabaseAdmin: app.supabaseAdmin,
+          logger: request.log,
+        })
+
+        await app.supabaseAdmin
+          .from('integrations')
+          .update({ last_sync_at: new Date().toISOString(), last_error: null })
+          .eq('id', integration.id)
+
+        return summary
+      } catch (error) {
+        // O erro fica visível no painel em vez de sumir no log do servidor.
+        await app.supabaseAdmin
+          .from('integrations')
+          .update({ status: 'error', last_error: (error as Error).message })
+          .eq('id', integration.id)
+
+        throw app.httpErrors.badGateway(
+          `Falha ao sincronizar com o parceiro: ${(error as Error).message}`,
+        )
+      }
+    },
+  )
+
   app.get(
     '/integrations',
     {
