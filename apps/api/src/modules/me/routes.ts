@@ -14,7 +14,7 @@ const meRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/me',
     {
-      preHandler: app.requireAuth,
+      onRequest: app.requireAuth,
       schema: {
         tags: ['auth'],
         description: 'Identidade derivada do JWT do Supabase Auth.',
