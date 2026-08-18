@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { OrderTracker } from '@/components/orders/order-tracker'
 import { ReviewPrompt } from '@/components/orders/review-prompt'
+import { PaymentPanel } from '@/components/orders/payment-panel'
 
 export default async function PedidoPage({
   params,
@@ -17,7 +18,7 @@ export default async function PedidoPage({
   // A RLS já restringe ao próprio cliente: um pedido alheio simplesmente não vem.
   const { data: order } = await supabase
     .from('orders')
-    .select('id, order_number, status, channel, subtotal, delivery_fee, total')
+    .select('id, order_number, status, channel, subtotal, delivery_fee, total, payment_status')
     .eq('id', id)
     .maybeSingle()
 
@@ -52,6 +53,12 @@ export default async function PedidoPage({
             total: Number(item.total),
           })),
         }}
+      />
+      <PaymentPanel
+        orderId={order.id}
+        tenantSlug={slug}
+        total={Number(order.total)}
+        paymentStatus={order.payment_status}
       />
       {concluido && !avaliacao ? <ReviewPrompt orderId={id} /> : null}
     </main>

@@ -20,6 +20,10 @@ import recipeRoutes from './modules/recipes/routes.js'
 import diningRoutes from './modules/dining/routes.js'
 import staffRoutes from './modules/staff/routes.js'
 import kdsRoutes from './modules/kds/routes.js'
+import cashRoutes from './modules/cash/routes.js'
+import paymentRoutes from './modules/payments/routes.js'
+import financeRoutes from './modules/finance/routes.js'
+import webhookRoutes from './modules/payments/webhooks.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -87,6 +91,11 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
       await api.register(diningRoutes)
       await api.register(staffRoutes)
       await api.register(kdsRoutes)
+      await api.register(cashRoutes)
+      await api.register(paymentRoutes)
+      await api.register(financeRoutes)
+      // Escopo próprio: o parser de corpo cru não pode vazar para as demais rotas.
+      await api.register(webhookRoutes, { prefix: '/webhooks' })
     },
     { prefix: '/api/v1' },
   )
