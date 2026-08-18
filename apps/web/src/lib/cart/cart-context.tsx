@@ -1,9 +1,10 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { round2 } from '@vendas-bot/shared'
+import { buildLineKey, round2 } from '@vendas-bot/shared'
+import { createClient } from '@/lib/supabase/client'
+import { useCartSync } from './use-cart-sync'
 import { EMPTY_CART, type CartItem, type CartState } from './types'
-import { buildLineId } from './line-id'
 
 const STORAGE_PREFIX = 'vendas-bot:cart:'
 
@@ -27,6 +28,18 @@ export function CartProvider({ tenantSlug, children }: { tenantSlug: string; chi
   const storageKey = `${STORAGE_PREFIX}${tenantSlug}`
   const [state, setState] = useState<CartState>(EMPTY_CART)
   const [hydrated, setHydrated] = useState(false)
+  const [authenticated, setAuthenticated] = useState(false)
+
+  // Só sincroniza com o banco quando há sessão: visitante anônimo fica no
+  // localStorage até completar o cadastro.
+  useEffect(() => {
+    const supabase = createClient()
+    void supabase.auth.getSession().then(({ data }) => setAuthenticated(Boolean(data.session)))
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthenticated(Boolean(session))
+    })
+    return () => listener.subscription.unsubscribe()
+  }, [])
 
   // Hidrata do localStorage apenas no cliente, evitando divergência com o SSR.
   useEffect(() => {
@@ -52,7 +65,7 @@ export function CartProvider({ tenantSlug, children }: { tenantSlug: string; chi
   }, [state, storageKey, hydrated])
 
   const addItem = useCallback((item: Omit<CartItem, 'lineId'>) => {
-    const lineId = buildLineId(item.productId, item.selectedOptions)
+    const lineId = buildLineKey(item.productId, item.selectedOptions)
     setState((current) => {
       const existing = current.items.find((line) => line.lineId === lineId)
       const items = existing
@@ -79,6 +92,8 @@ export function CartProvider({ tenantSlug, children }: { tenantSlug: string; chi
   }, [])
 
   const clear = useCallback(() => setState({ tenantSlug, items: [] }), [tenantSlug])
+
+  useCartSync(tenantSlug, state.items, authenticated && hydrated)
 
   const value = useMemo<CartContextValue>(() => {
     const subtotal = round2(

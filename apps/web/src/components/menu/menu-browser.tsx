@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { MenuCategory, MenuProduct } from '@vendas-bot/shared'
 import { formatBRL } from '@vendas-bot/shared'
 import { cn } from '@/lib/utils'
 import { ProductDialog } from './product-dialog'
+import { CartDrawer } from '@/components/cart/cart-drawer'
 
 export function MenuBrowser({
   sections,
@@ -14,6 +15,15 @@ export function MenuBrowser({
   tenantSlug: string
 }) {
   const [selected, setSelected] = useState<MenuProduct | null>(null)
+
+  // Mapa produto -> categoria: alimenta as regras de upsell por categoria.
+  const categoryIdsByProduct = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const section of sections) {
+      for (const product of section.products) map[product.id] = section.id
+    }
+    return map
+  }, [sections])
 
   return (
     <>
@@ -66,6 +76,8 @@ export function MenuBrowser({
           </ul>
         </section>
       ))}
+
+      <CartDrawer tenantSlug={tenantSlug} categoryIdsByProduct={categoryIdsByProduct} />
 
       {selected ? (
         <ProductDialog
