@@ -18,6 +18,7 @@ const NAV = [
   { href: '/painel/estoque', label: 'Estoque' },
   { href: '/painel/fichas', label: 'Fichas técnicas' },
   { href: '/painel/fornecedores', label: 'Fornecedores' },
+  { href: '/painel/midias', label: 'Mídias' },
   { href: '/painel/equipe', label: 'Equipe' },
 ]
 
