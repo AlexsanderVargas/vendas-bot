@@ -82,15 +82,15 @@ Esta seção existe para não confundir "implementado" com "homologado".
 - **Frontend**: `tsc --noEmit` e `next build` sem erros.
 - **CI**: `.github/workflows/ci.yml` roda banco (PostGIS), typecheck, testes e build a cada push e pull request.
 - **Entrega contínua**: `.github/workflows/deploy.yml` aplica as migrations no Supabase e publica o frontend na Vercel a cada push na `main` — sempre nesta ordem, e só depois de o CI passar. Os segredos necessários estão em [docs/homologacao.md](docs/homologacao.md#entrega-contínua).
+- **Supabase real**: as 34 migrations foram aplicadas num projeto Supabase gerenciado (PostgreSQL 17), resultando em 46 tabelas em `public`, o bucket `tenant-media` e suas políticas de `storage.objects`. O schema aplica limpo tanto no PostgreSQL local quanto no Supabase — o que muda entre os dois é só o schema `storage`, ausente no local.
 
 ### NÃO verificado contra ambientes reais
 
 - **Gateways de pagamento** (Mercado Pago, Stripe, Asaas): os clientes seguem a documentação oficial de cada provedor e são exercitados com transporte HTTP mockado — formato das requisições, mapeamento de status e verificação de assinatura, incluindo recusa de assinatura adulterada e de notificação antiga. **Nenhuma credencial real foi usada.** Homologar em sandbox antes de produção.
 - **Emissão fiscal (NFC-e/NF-e)**: depende de certificado digital A1/A3, credenciamento na SEFAZ do estado e homologação. O que existe é a arquitetura de banco, a fila com contingência e retentativa, e a porta `FiscalEmitter` com um cliente HTTP genérico. **Nada foi transmitido a SEFAZ ou a integrador real.**
-- **Supabase**: nenhuma migration foi aplicada em projeto real — a validação toda ocorreu em PostgreSQL local com stub do schema `auth`.
 - **Fluxo OAuth de ponta a ponta**: o código de login social está implementado, mas exige provedores configurados no painel do Supabase para ser exercitado.
 - **iFood e Uber Eats**: os clientes seguem a documentação pública de cada marketplace e são exercitados com transporte HTTP mockado — normalização de pedido, verificação de assinatura do webhook e idempotência de evento. **Nenhuma credencial de parceiro foi usada, e nenhum pedido real foi importado.** Ambos exigem homologação e aprovação do marketplace antes de produção.
-- **Supabase Storage**: o bucket `tenant-media` e suas políticas estão na migration, mas não foram criados em projeto real. O envio de imagem depende do bucket existir — e o schema `storage` não existe no PostgreSQL local, então essa parte da migration é pulada nas asserções (o que é testado ali é o registro, o prefixo por estabelecimento e os limites de arquivo).
+- **Supabase Storage**: o bucket `tenant-media` e suas políticas existem no projeto real, criados pela própria migration 33. O que continua sem verificação é o caminho completo de envio de imagem pelo navegador — o schema `storage` não existe no PostgreSQL local, então essa parte da migration é pulada nas asserções (o que é testado ali é o registro, o prefixo por estabelecimento e os limites de arquivo).
 
 ### Pontos a endurecer antes de produção
 
