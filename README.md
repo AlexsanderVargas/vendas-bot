@@ -38,6 +38,9 @@ npm run dev -w @vendas-bot/web    # http://localhost:3000
 
 Aplicar o schema: `supabase db push`, ou executar os arquivos de `supabase/migrations/` em ordem numérica no SQL Editor.
 
+Para provisionar de verdade — contas, chaves e o que é gratuito em cada
+integração — siga [docs/homologacao.md](docs/homologacao.md).
+
 ## Verificação
 
 ```bash
@@ -91,6 +94,7 @@ Esta seção existe para não confundir "implementado" com "homologado".
 
 ## Documentação
 
+- [Homologação e Provisionamento](docs/homologacao.md) — o que criar fora do repositório, em que ordem, e o que custa dinheiro.
 - [Regras de Engenharia](docs/engineering-rules.md) — fluxo de branches, contratos de I/O e gestão de issues.
 - [Arquitetura](docs/architecture.md) — visão modular e estratégia multi-tenant.
 - [PBI 1 — Database Core](docs/database/pbi-1-database-core.md) — diagrama ER e decisões do núcleo.
