@@ -1,23 +1,20 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
 import { getBranding } from '@/lib/branding'
 import { BrandingEditor } from '@/components/painel/branding-editor'
 
 export const metadata = { title: 'Identidade visual' }
 
-export default async function IdentidadePage() {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getUser()
-  const tenantId = (data.user?.app_metadata as { tenant_id?: string } | null)?.tenant_id
-  if (!tenantId) redirect('/painel')
-
-  const { data: tenant } = await supabase
-    .from('tenants')
-    .select('slug')
-    .eq('id', tenantId)
-    .maybeSingle()
-
-  const branding = tenant ? await getBranding(String(tenant.slug)) : null
+/**
+ * O estabelecimento vem da URL. A guarda do painel já provou que quem está
+ * aqui é funcionário ativo deste slug, então não há por que redescobrir o
+ * vínculo pelo claim do JWT.
+ */
+export default async function IdentidadePage({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}) {
+  const { slug } = await params
+  const branding = await getBranding(slug)
 
   if (!branding) {
     return (
