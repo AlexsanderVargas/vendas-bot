@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { Type } from '@sinclair/typebox'
 import { ErrorResponse, Money, Slug, StandardErrors, Uuid } from '@vendas-bot/shared'
@@ -163,10 +162,24 @@ const paymentRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const { data: customer } = order.customer_id
         ? await app.supabaseAdmin
             .from('customers')
-            .select('name, whatsapp, auth_user_id')
+            .select('name, whatsapp, auth_user_id, cpf_cnpj')
             .eq('id', order.customer_id)
             .maybeSingle()
         : { data: null }
+
+      const methodColumn = request.body.method === 'boleto' ? 'other' : request.body.method
+
+      // Quantas cobranças já existem para este pedido e método define a
+      // tentativa atual. Dois cliques (ou um retry de rede) na MESMA tentativa
+      // contam o mesmo total, produzem a mesma chave, e o gateway devolve a
+      // cobrança existente em vez de criar outra; uma nova tentativa
+      // deliberada, depois de a anterior falhar ou expirar, conta mais uma e
+      // gera cobrança nova — que é o comportamento desejado.
+      const { count: previousAttempts } = await app.supabaseAdmin
+        .from('payments')
+        .select('id', { count: 'exact', head: true })
+        .eq('order_id', order.id)
+        .eq('method', methodColumn)
 
       try {
         const result = await provider.createPayment({
@@ -176,12 +189,13 @@ const paymentRoutes: FastifyPluginAsyncTypebox = async (app) => {
           orderId: order.id,
           orderNumber: Number(order.order_number),
           payer: {
-            email: request.auth!.email ?? 'sem-email@vendas-bot.local',
+            email: request.auth!.email ?? 'sem-email@gastrosync.local',
             name: (customer?.name as string | null) ?? null,
+            // O Asaas exige documento para cadastrar o cliente; Mercado Pago
+            // e Stripe apenas o repassam quando existe.
+            document: (customer?.cpf_cnpj as string | null) ?? null,
           },
-          // Chave derivada do pedido e do método: um retry de rede não cria
-          // duas cobranças para a mesma tentativa.
-          idempotencyKey: `${order.id}:${request.body.method}:${randomUUID()}`,
+          idempotencyKey: `${order.id}:${request.body.method}:${previousAttempts ?? 0}`,
         })
 
         const { data: saved, error } = await app.supabaseAdmin
@@ -191,7 +205,7 @@ const paymentRoutes: FastifyPluginAsyncTypebox = async (app) => {
             order_id: order.id,
             provider: providerName,
             provider_payment_id: result.providerPaymentId,
-            method: request.body.method === 'boleto' ? 'other' : request.body.method,
+            method: methodColumn,
             status: result.status,
             amount: Number(order.total),
             qr_code: result.qrCode,

@@ -119,9 +119,46 @@ export async function processEvents(deps: {
       p_payload: event.raw ?? {},
     })
 
-    if ((recorded as { duplicated?: boolean } | null)?.duplicated) {
+    const state = recorded as { duplicated?: boolean; processed?: boolean } | null
+
+    // "Já registrado" não é "já processado". O registro acontece ANTES da
+    // ingestão: um evento cuja ingestão falhou fica registrado e sem
+    // processed_at. Confirmá-lo no parceiro por ser "duplicado" apagaria o
+    // pedido para sempre — por isso só o processamento concluído encerra o
+    // evento; o resto é retentado.
+    if (state?.duplicated && state.processed) {
       summary.duplicated += 1
       processedEventIds.push(event.eventId)
+      continue
+    }
+
+    // Cancelamento no app do parceiro precisa alcançar o pedido interno: sem
+    // isto a cozinha produz um pedido que o cliente já cancelou.
+    if (isCancellationEvent(integration.channel, event.code) && event.externalOrderId) {
+      try {
+        const { data: canceled } = await supabaseAdmin.rpc('cancel_external_order', {
+          p_integration_id: integration.id,
+          p_external_order_id: event.externalOrderId,
+          p_reason: event.code,
+        })
+
+        const cancelResult = canceled as { ok?: boolean; error?: string | null } | null
+        if (cancelResult?.ok) {
+          processedEventIds.push(event.eventId)
+        } else {
+          // Pedido ainda não ingerido (cancelado antes de entrarmos) ou já
+          // entregue: não há o que cancelar, e insistir só travaria a fila.
+          summary.failed += 1
+          deps.logger?.warn(
+            { eventId: event.eventId, error: cancelResult?.error ?? 'desconhecido' },
+            'Cancelamento do parceiro não pôde ser aplicado',
+          )
+          processedEventIds.push(event.eventId)
+        }
+      } catch (error) {
+        summary.failed += 1
+        deps.logger?.warn({ err: error, eventId: event.eventId }, 'Falha ao cancelar pedido externo')
+      }
       continue
     }
 
@@ -153,10 +190,17 @@ export async function processEvents(deps: {
         if (integration.auto_accept && !result.duplicated) {
           await channel.applyAction(event.externalOrderId, 'confirm')
         }
+        processedEventIds.push(event.eventId)
       } else {
+        // Ingestão recusada (canal pausado, loja divergente): NÃO confirmar.
+        // Confirmar aqui faria o parceiro parar de reentregar e o pedido se
+        // perderia — o evento fica pendente e volta no próximo ciclo.
         summary.failed += 1
+        deps.logger?.warn(
+          { eventId: event.eventId, error: (result as { error?: string } | null)?.error ?? null },
+          'Ingestão do pedido externo recusada; evento segue pendente',
+        )
       }
-      processedEventIds.push(event.eventId)
     } catch (error) {
       summary.failed += 1
       deps.logger?.warn({ err: error, eventId: event.eventId }, 'Falha ao ingerir pedido externo')

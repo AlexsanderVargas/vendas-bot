@@ -57,6 +57,9 @@ export function ComandaManager({ products }: { products: Product[] }) {
   const [productId, setProductId] = useState(products[0]?.id ?? '')
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string[]>>({})
   const [error, setError] = useState<string | null>(null)
+  // Salão é tablet e pressa: toque duplo não pode abrir duas comandas,
+  // lançar o item duas vezes nem fechar a conta sem querer.
+  const [busy, setBusy] = useState(false)
 
   const product = products.find((candidate) => candidate.id === productId)
 
@@ -76,6 +79,8 @@ export function ComandaManager({ products }: { products: Product[] }) {
 
   async function openOrder() {
     setError(null)
+    if (busy) return
+    setBusy(true)
     try {
       const opened = await apiFetch<{ orderId: string; orderNumber: number }>(
         `/dining/tables/${tableId}/order`,
@@ -85,6 +90,8 @@ export function ComandaManager({ products }: { products: Product[] }) {
       await loadTables()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível abrir a comanda.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -96,6 +103,8 @@ export function ComandaManager({ products }: { products: Product[] }) {
   async function addItem() {
     if (!order || !product) return
     setError(null)
+    if (busy) return
+    setBusy(true)
     try {
       await apiFetch(`/orders/${order.id}/items`, {
         method: 'POST',
@@ -109,18 +118,24 @@ export function ComandaManager({ products }: { products: Product[] }) {
       await refreshOrder(order.id)
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível lançar o item.')
+    } finally {
+      setBusy(false)
     }
   }
 
   async function closeOrder() {
     if (!order) return
     setError(null)
+    if (busy) return
+    setBusy(true)
     try {
       await apiFetch(`/orders/${order.id}/close`, { method: 'POST' })
       setOrder(null)
       await loadTables()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível fechar a conta.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -163,7 +178,7 @@ export function ComandaManager({ products }: { products: Product[] }) {
             ))}
           </select>
         </label>
-        <Button onClick={() => void openOrder()} disabled={!tableId}>
+        <Button onClick={() => void openOrder()} disabled={!tableId || busy}>
           Abrir comanda
         </Button>
       </div>
@@ -233,9 +248,19 @@ export function ComandaManager({ products }: { products: Product[] }) {
             ))}
 
             <div className="flex gap-2">
-              <Button onClick={() => void addItem()}>Lançar item</Button>
-              <Button variant="outline" onClick={() => void closeOrder()}>
-                Fechar conta
+              <Button onClick={() => void addItem()} disabled={busy}>
+                {busy ? 'Lançando…' : 'Lançar item'}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  // Fechar conta encerra o atendimento da mesa: confirmar evita
+                  // o toque acidental no meio do salão.
+                  if (window.confirm('Fechar a conta desta mesa?')) void closeOrder()
+                }}
+              >
+                {busy ? 'Fechando…' : 'Fechar conta'}
               </Button>
             </div>
           </div>

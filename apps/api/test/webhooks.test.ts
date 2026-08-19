@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { toCredentials } from '../src/modules/payments/routes.js'
 import { hmacSha256Hex } from '../src/modules/payments/providers/index.js'
 import { createFakeSupabase, type TableRows } from './fake-supabase.js'
-import { buildTestServer, TENANT_A } from './helpers.js'
+import { bearer, buildTestServer, customerToken, TENANT_A } from './helpers.js'
 
 const WEBHOOK_SECRET = 'segredo-do-webhook'
 
@@ -150,5 +150,80 @@ describe('POST /api/v1/webhooks/:provider', () => {
       payload: { tenantSlug: 'nao-existe', subtotal: 10 },
     })
     expect([404, 400]).toContain(res.statusCode)
+  })
+})
+
+describe('POST /api/v1/payments — idempotência da cobrança', () => {
+  const ORDER_ID = '50000000-0000-0000-0000-0000000000a1'
+  const ORDER = {
+    id: ORDER_ID,
+    tenant_id: TENANT_A,
+    order_number: 42,
+    total: 25.9,
+    payment_status: 'pending',
+    customer_id: null,
+  }
+
+  /**
+   * Sobe o servidor com N cobranças já registradas para o pedido e devolve a
+   * chave de idempotência que o provedor recebeu.
+   */
+  async function idempotencyKeyWith(existingPayments: number): Promise<string> {
+    const app = await buildTestServer()
+    const tables: TableRows = {
+      ...TABLES,
+      orders: [ORDER],
+      payments: Array.from({ length: existingPayments }, (_, index) => ({
+        id: `pay-${index}`,
+        order_id: ORDER_ID,
+        method: 'pix',
+      })),
+    }
+
+    const fake = createFakeSupabase(tables)
+    Object.defineProperty(app, 'supabaseAdmin', { value: fake, configurable: true })
+    app.addHook('onRequest', async (request) => {
+      request.supabase = createFakeSupabase(tables)
+    })
+
+    let captured = ''
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      if (String(url).endsWith('/v1/payments')) captured = headers['x-idempotency-key'] ?? ''
+      return new Response(JSON.stringify({ id: 'mp-1', status: 'pending' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+
+    try {
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/payments',
+        headers: bearer(await customerToken()),
+        payload: { orderId: ORDER_ID, method: 'pix' },
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+      await app.close()
+    }
+
+    return captured
+  }
+
+  it('repete a mesma chave enquanto a tentativa é a mesma (retry não duplica cobrança)', async () => {
+    const primeira = await idempotencyKeyWith(0)
+    const retry = await idempotencyKeyWith(0)
+
+    expect(primeira).not.toBe('')
+    expect(retry).toBe(primeira)
+  })
+
+  it('gera chave nova para uma tentativa deliberada depois da anterior', async () => {
+    const primeira = await idempotencyKeyWith(0)
+    const segunda = await idempotencyKeyWith(1)
+
+    expect(segunda).not.toBe(primeira)
   })
 })

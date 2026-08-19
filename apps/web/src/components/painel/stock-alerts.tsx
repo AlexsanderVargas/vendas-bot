@@ -23,15 +23,30 @@ const KIND_LABEL: Record<StockAlert['kind'], string> = {
 export function StockAlerts() {
   const [alerts, setAlerts] = useState<StockAlert[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void apiFetch<StockAlert[]>('/stock/alerts')
-      .then(setAlerts)
-      .catch(() => setAlerts([]))
+      .then((list) => {
+        setAlerts(list)
+        setError(null)
+      })
+      .catch(() => setError('Não foi possível carregar os alertas de estoque.'))
       .finally(() => setLoaded(true))
   }, [])
 
   if (!loaded) return <p className="text-sm text-muted-foreground">Carregando alertas…</p>
+
+  // Falha na carga não pode virar "está tudo bem": afirmar que não há alerta
+  // quando não se sabe é o pior resultado possível para perecível vencido.
+  if (error) {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {error}
+      </p>
+    )
+  }
+
   if (alerts.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhum alerta de estoque no momento.</p>
   }

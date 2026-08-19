@@ -42,6 +42,8 @@ export function CashRegister() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Movimento de caixa é dinheiro: duplo clique não pode virar duas sangrias.
+  const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
   const open = sessions.find((session) => session.status === 'open') ?? null
@@ -63,7 +65,14 @@ export function CashRegister() {
 
   async function openSession(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    if (busy) return
+    setBusy(true)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setError(null)
     setMessage(null)
     try {
@@ -74,13 +83,22 @@ export function CashRegister() {
       await load()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível abrir o caixa.')
+    } finally {
+      setBusy(false)
     }
   }
 
   async function addMovement(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (busy) return
+    setBusy(true)
     if (!open) return
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setError(null)
     try {
       await apiFetch(`/cash/sessions/${open.id}/movements`, {
@@ -92,17 +110,26 @@ export function CashRegister() {
           reason: String(form.get('reason') || '') || null,
         }),
       })
-      event.currentTarget.reset()
+      formElement.reset()
       await load()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível registrar o movimento.')
+    } finally {
+      setBusy(false)
     }
   }
 
   async function closeSession(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (busy) return
+    setBusy(true)
     if (!open) return
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setError(null)
     try {
       const result = await apiFetch<{ expectedCash: number; countedAmount: number; difference: number }>(
@@ -125,6 +152,8 @@ export function CashRegister() {
       await load()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível fechar o caixa.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -148,7 +177,9 @@ export function CashRegister() {
             placeholder="Fundo de troco"
             defaultValue={0}
           />
-          <Button type="submit">Abrir caixa</Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? 'Abrindo…' : 'Abrir caixa'}
+          </Button>
         </form>
       ) : (
         <>
@@ -205,7 +236,9 @@ export function CashRegister() {
               </select>
               <Input name="amount" type="number" step="0.01" min="0.01" placeholder="Valor" required />
               <Input name="reason" placeholder="Motivo" />
-              <Button type="submit">Registrar</Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? 'Registrando…' : 'Registrar'}
+              </Button>
             </form>
 
             <form onSubmit={closeSession} className="flex flex-col gap-3 rounded-xl border border-border p-4">
@@ -222,8 +255,8 @@ export function CashRegister() {
                 required
               />
               <Input name="notes" placeholder="Observações" />
-              <Button type="submit" variant="outline">
-                Fechar caixa
+              <Button type="submit" variant="outline" disabled={busy}>
+                {busy ? 'Fechando…' : 'Fechar caixa'}
               </Button>
             </form>
           </div>

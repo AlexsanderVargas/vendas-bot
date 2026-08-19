@@ -113,7 +113,12 @@ export function FloorMap() {
 
   async function addTable(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setError(null)
     try {
       await apiFetch('/dining/tables', {
@@ -124,7 +129,7 @@ export function FloorMap() {
           sectorId: String(form.get('sectorId') || '') || null,
         }),
       })
-      event.currentTarget.reset()
+      formElement.reset()
       await load()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível cadastrar a mesa.')

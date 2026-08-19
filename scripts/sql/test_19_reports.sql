@@ -85,9 +85,14 @@ select test.assert(
   (public.profit_projection('10000000-0000-0000-0000-000000000001', 3, 30)->>'confidence') = 'low',
   'base histórica curta reduz a confiança da projeção');
 
+-- Estabelecimento sem vendas: lido sob service_role, porque o guard de tenant
+-- impede que o funcionário de um estabelecimento leia a projeção de outro.
+select set_config('request.jwt.claims', '{"role":"service_role"}', false);
 select test.assert(
   (public.profit_projection('10000000-0000-0000-0000-000000000002', 30, 30)->>'confidence') = 'low',
   'estabelecimento sem vendas tem confiança baixa');
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-0000000000a1","app_metadata":{"tenant_id":"10000000-0000-0000-0000-000000000001"}}', false);
 
 -- ------------------------------ ranking -------------------------------------
 select test.assert(
@@ -100,11 +105,16 @@ select test.assert(
     '10000000-0000-0000-0000-000000000001', current_date - 30, current_date, 10)),
   'ranking traz a receita por produto');
 
--- Isolamento entre estabelecimentos.
+-- Isolamento entre estabelecimentos: o funcionário do tenant 001 não pode ler
+-- o relatório do tenant 002 (guard de tenant nas funções SECURITY DEFINER).
+select test.assert_denied(
+  $q$ select public.dre_report('10000000-0000-0000-0000-000000000002', current_date - 30, current_date) $q$,
+  'DRE de outro estabelecimento é negado ao funcionário');
+
+-- O caminho legítimo (próprio estabelecimento) segue acessível.
 select test.assert(
-  (public.dre_report('10000000-0000-0000-0000-000000000002', current_date - 30, current_date)->>'revenue')::numeric
-    <> (public.dre_report('10000000-0000-0000-0000-000000000001', current_date - 30, current_date)->>'revenue')::numeric,
-  'DRE é apurado por estabelecimento');
+  (public.dre_report('10000000-0000-0000-0000-000000000001', current_date - 30, current_date)->>'revenue')::numeric > 0,
+  'DRE do próprio estabelecimento permanece acessível');
 
 select set_config('request.jwt.claim.sub', '', false);
 select set_config('request.jwt.claims', '{}', false);
