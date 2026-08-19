@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
-import { CartProvider } from '@/lib/cart/cart-context'
 import { ThemeStyle } from '@/components/branding/theme-style'
 import { getBranding } from '@/lib/branding'
 
@@ -41,7 +40,13 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
   }
 }
 
-/** O carrinho e a identidade visual são compartilhados por todas as telas. */
+/**
+ * A identidade visual vale para tudo que vive sob o slug — cardápio e painel:
+ * quem passa o dia no painel é a equipe do cliente, não a do SaaS.
+ *
+ * O carrinho NÃO fica aqui: ele é do grupo (cliente). O painel não tem
+ * carrinho, e carregar esse estado em toda tela interna é peso morto.
+ */
 export default async function TenantLayout({ children, params }: LayoutProps) {
   const { slug } = await params
   const branding = await getBranding(slug)
@@ -51,7 +56,7 @@ export default async function TenantLayout({ children, params }: LayoutProps) {
   return (
     <>
       <ThemeStyle branding={branding} />
-      <CartProvider tenantSlug={slug}>{children}</CartProvider>
+      {children}
     </>
   )
 }
