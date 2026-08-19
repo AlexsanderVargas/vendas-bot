@@ -162,7 +162,7 @@ const paymentRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const { data: customer } = order.customer_id
         ? await app.supabaseAdmin
             .from('customers')
-            .select('name, whatsapp, auth_user_id')
+            .select('name, whatsapp, auth_user_id, cpf_cnpj')
             .eq('id', order.customer_id)
             .maybeSingle()
         : { data: null }
@@ -191,6 +191,9 @@ const paymentRoutes: FastifyPluginAsyncTypebox = async (app) => {
           payer: {
             email: request.auth!.email ?? 'sem-email@gastrosync.local',
             name: (customer?.name as string | null) ?? null,
+            // O Asaas exige documento para cadastrar o cliente; Mercado Pago
+            // e Stripe apenas o repassam quando existe.
+            document: (customer?.cpf_cnpj as string | null) ?? null,
           },
           idempotencyKey: `${order.id}:${request.body.method}:${previousAttempts ?? 0}`,
         })
