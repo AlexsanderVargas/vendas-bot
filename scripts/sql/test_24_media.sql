@@ -174,6 +174,17 @@ select test.assert(
   = 'Logo da lancheria',
   'estabelecimento não altera a mídia de outro');
 
+-- O funcionário do tenant 001 (contexto atual) não enxerga a lista de outro
+-- estabelecimento: o guard de tenant devolve conjunto vazio.
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-0000000000a1","app_metadata":{"tenant_id":"10000000-0000-0000-0000-000000000001"}}', false);
+select test.assert(
+  (select count(*) from public.unused_media('10000000-0000-0000-0000-000000000002')) = 0,
+  'funcionário não enxerga mídia não utilizada de outro estabelecimento');
+
+-- E que a lista é de fato por estabelecimento: sob service_role, o tenant 002
+-- tem a sua própria mídia não utilizada.
+select set_config('request.jwt.claims', '{"role":"service_role"}', false);
 select test.assert(
   (select count(*) from public.unused_media('10000000-0000-0000-0000-000000000002')) = 1,
   'a lista de não utilizadas é por estabelecimento');
