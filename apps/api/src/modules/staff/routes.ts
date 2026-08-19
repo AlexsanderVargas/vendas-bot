@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { Type } from '@sinclair/typebox'
-import { StandardErrors, Uuid } from '@vendas-bot/shared'
+import { normalizeStaffLogin, staffLoginEmail, StandardErrors, Uuid } from '@vendas-bot/shared'
+import { generateTempPassword } from '../../lib/temp-password.js'
 
 const Permission = Type.Object({
   key: Type.String(),
@@ -32,6 +33,32 @@ const StaffMember = Type.Object({
   isActive: Type.Boolean(),
   roleId: Uuid,
   roleName: Type.Union([Type.String(), Type.Null()]),
+  /** Nome de usuário; null para quem entra por e-mail. */
+  login: Type.Union([Type.String(), Type.Null()]),
+  /** Ainda está com a senha temporária gerada pelo sistema. */
+  mustChangePassword: Type.Boolean(),
+})
+
+/** Acesso criado com usuário e senha, para quem não tem e-mail. */
+const CredentialInput = Type.Object({
+  login: Type.String({ minLength: 3, maxLength: 30 }),
+  name: Type.String({ minLength: 1, maxLength: 120 }),
+  roleId: Uuid,
+  phone: Type.Optional(Type.Union([Type.String({ maxLength: 20 }), Type.Null()])),
+})
+
+/**
+ * A senha temporária aparece UMA única vez, aqui. Não fica recuperável: se o
+ * gerente perder, gera outra em POST /staff/:id/senha.
+ */
+const CredentialResponse = Type.Object({
+  userId: Uuid,
+  login: Type.String(),
+  temporaryPassword: Type.String(),
+})
+
+const PasswordResponse = Type.Object({
+  temporaryPassword: Type.String(),
 })
 
 const InviteInput = Type.Object({
@@ -51,6 +78,21 @@ const StaffUpdate = Type.Object({
 const IdParams = Type.Object({ id: Uuid })
 
 const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  /**
+   * Contrato: (tenantId) -> Promise<string>
+   * O slug entra no endereço técnico da conta de usuário e no link do convite.
+   * Lido com service_role: o convite acontece antes de a pessoa existir.
+   */
+  async function tenantSlug(tenantId: string): Promise<string> {
+    const { data } = await app.supabaseAdmin
+      .from('tenants')
+      .select('slug')
+      .eq('id', tenantId)
+      .maybeSingle()
+    if (!data?.slug) throw app.httpErrors.internalServerError('Estabelecimento sem slug')
+    return String(data.slug)
+  }
+
   app.get(
     '/permissions',
     {
@@ -155,7 +197,7 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
     async (request) => {
       const { data, error } = await request.supabase
         .from('users')
-        .select('id, name, phone, is_active, role_id, roles(name)')
+        .select('id, name, phone, is_active, role_id, login, must_change_password, roles(name)')
         .order('name', { ascending: true })
 
       if (error) throw app.httpErrors.internalServerError(error.message)
@@ -168,6 +210,8 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
           isActive: Boolean(row.is_active),
           roleId: String(row.role_id),
           roleName: role?.name ?? null,
+          login: (row.login as string | null) ?? null,
+          mustChangePassword: Boolean(row.must_change_password),
         }
       })
     },
@@ -200,9 +244,13 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
 
       // O convite e a escrita do claim exigem service_role: o próprio usuário
       // não pode se atribuir a um estabelecimento.
+      // Sem redirectTo, o convite leva para a raiz do Site URL configurado no
+      // Supabase — que não sabe de qual estabelecimento é o funcionário.
+      const slug = await tenantSlug(tenantId)
       const { data: invited, error: inviteError } =
         await app.supabaseAdmin.auth.admin.inviteUserByEmail(request.body.email, {
           data: { full_name: request.body.name },
+          redirectTo: `${app.config.webAppUrl}/${slug}/painel/definir-senha`,
         })
 
       if (inviteError || !invited?.user) {
@@ -225,6 +273,125 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
       if (userError) throw app.httpErrors.badRequest(userError.message)
 
       return reply.status(201).send({ userId: invited.user.id })
+    },
+  )
+
+  app.post(
+    '/staff',
+    {
+      onRequest: app.requirePermission('staff.write'),
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+      schema: {
+        tags: ['equipe'],
+        description:
+          'Cria acesso com nome de usuário e senha temporária, para funcionário sem e-mail. A senha é devolvida uma única vez.',
+        body: CredentialInput,
+        response: { 201: CredentialResponse, ...StandardErrors },
+      },
+    },
+    async (request, reply) => {
+      const tenantId = request.requireTenantId()
+
+      const login = normalizeStaffLogin(request.body.login)
+      if (!login) {
+        throw app.httpErrors.badRequest(
+          'Usuário deve começar com letra e conter apenas letras minúsculas, números, ponto, hífen ou sublinhado (3 a 30 caracteres)',
+        )
+      }
+
+      const { data: role } = await request.supabase
+        .from('roles')
+        .select('id')
+        .eq('id', request.body.roleId)
+        .maybeSingle()
+      if (!role) throw app.httpErrors.badRequest('Papel não encontrado')
+
+      const { data: taken } = await request.supabase
+        .from('users')
+        .select('id')
+        .eq('login', login)
+        .maybeSingle()
+      if (taken) throw app.httpErrors.badRequest(`O usuário "${login}" já existe neste estabelecimento`)
+
+      const slug = await tenantSlug(tenantId)
+      const temporaryPassword = generateTempPassword()
+
+      // `email_confirm` porque o endereço é técnico e não recebe mensagem: sem
+      // isso a conta nasceria pendente de uma confirmação que nunca chega.
+      const { data: created, error: createError } = await app.supabaseAdmin.auth.admin.createUser({
+        email: staffLoginEmail(login, slug),
+        password: temporaryPassword,
+        email_confirm: true,
+        app_metadata: { tenant_id: tenantId },
+        user_metadata: { full_name: request.body.name },
+      })
+
+      if (createError || !created?.user) {
+        throw app.httpErrors.badRequest(createError?.message ?? 'Não foi possível criar o acesso')
+      }
+
+      const { error: userError } = await app.supabaseAdmin.from('users').insert({
+        id: created.user.id,
+        tenant_id: tenantId,
+        role_id: request.body.roleId,
+        name: request.body.name,
+        phone: request.body.phone ?? null,
+        login,
+        must_change_password: true,
+      })
+
+      if (userError) {
+        // Conta no Auth sem vínculo em public.users é um fantasma: ninguém a
+        // enxerga no painel e ela ocupa o nome de usuário para sempre.
+        await app.supabaseAdmin.auth.admin.deleteUser(created.user.id)
+        throw app.httpErrors.badRequest(userError.message)
+      }
+
+      return reply.status(201).send({ userId: created.user.id, login, temporaryPassword })
+    },
+  )
+
+  app.post(
+    '/staff/:id/senha',
+    {
+      onRequest: app.requirePermission('staff.write'),
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+      schema: {
+        tags: ['equipe'],
+        description:
+          'Gera nova senha temporária para um funcionário. Ele é obrigado a trocá-la no próximo acesso.',
+        params: IdParams,
+        response: { 200: PasswordResponse, ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const tenantId = request.requireTenantId()
+
+      // supabaseAdmin ignora RLS: sem este filtro, um gerente trocaria a senha
+      // de um funcionário de outro estabelecimento sabendo o id.
+      const { data: member } = await app.supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('id', request.params.id)
+        .eq('tenant_id', tenantId)
+        .maybeSingle()
+      if (!member) throw app.httpErrors.notFound('Funcionário não encontrado')
+
+      const temporaryPassword = generateTempPassword()
+      const { error: passwordError } = await app.supabaseAdmin.auth.admin.updateUserById(
+        request.params.id,
+        { password: temporaryPassword },
+      )
+      if (passwordError) throw app.httpErrors.internalServerError(passwordError.message)
+
+      const { error: flagError } = await app.supabaseAdmin
+        .from('users')
+        .update({ must_change_password: true })
+        .eq('id', request.params.id)
+        .eq('tenant_id', tenantId)
+      if (flagError) throw app.httpErrors.internalServerError(flagError.message)
+
+      return { temporaryPassword }
     },
   )
 
@@ -279,7 +446,7 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
         .update(patch)
         .eq('id', request.params.id)
         .eq('tenant_id', tenantId)
-        .select('id, name, phone, is_active, role_id, roles(name)')
+        .select('id, name, phone, is_active, role_id, login, must_change_password, roles(name)')
         .maybeSingle()
 
       if (error) throw app.httpErrors.badRequest(error.message)
@@ -293,6 +460,8 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
         isActive: data.is_active,
         roleId: data.role_id,
         roleName: role?.name ?? null,
+        login: data.login ?? null,
+        mustChangePassword: Boolean(data.must_change_password),
       }
     },
   )

@@ -1,13 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
-import { createFakeSupabase, type TableRows } from './fake-supabase.js'
+import { createFakeSupabase, type FakeWrites, type TableRows } from './fake-supabase.js'
 import { bearer, buildTestServer, customerToken, staffToken, STAFF_A, TENANT_A } from './helpers.js'
 
 const ROLE_OWNER = 'f0000000-0000-0000-0000-0000000000aa'
 
+const CAIXA = '00000000-0000-0000-0000-0000000000b1'
+
 const TABLES: TableRows = {
+  tenants: [{ id: TENANT_A, slug: 'lancheria-t1', name: 'Lancheria T1' }],
   users: [
-    { id: STAFF_A, tenant_id: TENANT_A, is_active: true, name: 'Staff A', phone: null, role_id: ROLE_OWNER, roles: { permissions: { '*': true }, name: 'Proprietário' } },
+    { id: STAFF_A, tenant_id: TENANT_A, is_active: true, name: 'Staff A', phone: null, role_id: ROLE_OWNER, login: null, must_change_password: false, roles: { permissions: { '*': true }, name: 'Proprietário' } },
+    { id: CAIXA, tenant_id: TENANT_A, is_active: true, name: 'Caixa', phone: null, role_id: ROLE_OWNER, login: 'caixa1', must_change_password: true, roles: { permissions: {}, name: 'Caixa' } },
   ],
   roles: [
     { id: ROLE_OWNER, tenant_id: null, key: 'owner', name: 'Proprietário', permissions: { '*': true } },
@@ -20,10 +24,12 @@ const TABLES: TableRows = {
 
 describe('rotas de equipe e papéis', () => {
   let app: FastifyInstance
+  const writes: FakeWrites = { inserted: [], updated: [], deleted: [], signed: [], removed: [] }
+
   beforeAll(async () => {
     app = await buildTestServer()
     app.addHook('onRequest', async (request) => {
-      const fake = createFakeSupabase(TABLES)
+      const fake = createFakeSupabase(TABLES, {}, writes)
       request.supabase = fake
       Object.defineProperty(app, 'supabaseAdmin', { value: fake, configurable: true })
     })
@@ -123,6 +129,76 @@ describe('rotas de equipe e papéis', () => {
     expect(res.statusCode).toBe(404)
   })
 
+  it('cria acesso de funcionário com usuário e senha temporária', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/staff',
+      headers: bearer(await staffToken()),
+      payload: { login: 'Caixa2', name: 'Maria', roleId: ROLE_OWNER },
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.json().login).toBe('caixa2')
+    expect(res.json().temporaryPassword).toHaveLength(12)
+
+    // O endereço técnico é derivado do usuário e do slug: é o mesmo que o
+    // navegador monta na tela de entrada, sem consultar o servidor.
+    const created = writes.authCreated!.at(-1)!
+    expect(created.email).toBe('caixa2@lancheria-t1.equipe.gastrosync.app')
+    expect(created.appMetadata).toEqual({ tenant_id: TENANT_A })
+
+    const linked = writes.inserted.at(-1)!
+    expect(linked.table).toBe('users')
+    expect(linked.rows[0]).toMatchObject({ login: 'caixa2', must_change_password: true })
+  })
+
+  it('recusa nome de usuário fora do formato', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/staff',
+      headers: bearer(await staffToken()),
+      payload: { login: 'Caixa 2', name: 'Maria', roleId: ROLE_OWNER },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().message).toContain('Usuário deve começar com letra')
+  })
+
+  it('recusa usuário já existente no estabelecimento', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/staff',
+      headers: bearer(await staffToken()),
+      payload: { login: 'caixa1', name: 'Outro', roleId: ROLE_OWNER },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().message).toContain('já existe')
+  })
+
+  it('gera nova senha temporária e reobriga a troca', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/staff/${CAIXA}/senha`,
+      headers: bearer(await staffToken()),
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().temporaryPassword).toHaveLength(12)
+    expect(writes.authUpdated!.at(-1)).toMatchObject({ id: CAIXA })
+    expect(writes.updated.at(-1)).toMatchObject({
+      table: 'users',
+      patch: { must_change_password: true },
+    })
+  })
+
+  it('não gera senha para funcionário de outro estabelecimento', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/staff/00000000-0000-0000-0000-0000000000a9/senha',
+      headers: bearer(await staffToken()),
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
   it('valida o e-mail no convite', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -146,5 +222,21 @@ describe('rotas de equipe e papéis', () => {
     })
     expect(res.statusCode).toBe(400)
     expect(res.json().message).toContain('Papel não encontrado')
+  })
+
+  it('convida por e-mail apontando para o painel do estabelecimento', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/staff/invite',
+      headers: bearer(await staffToken()),
+      payload: { email: 'gerente@exemplo.com', name: 'Gerente', roleId: ROLE_OWNER },
+    })
+
+    expect(res.statusCode).toBe(201)
+    // Sem redirectTo o convite cairia na raiz do Site URL, que não sabe de
+    // qual estabelecimento é o funcionário.
+    expect(writes.authInvited!.at(-1)!.redirectTo).toBe(
+      'http://localhost:3000/lancheria-t1/painel/definir-senha',
+    )
   })
 })
