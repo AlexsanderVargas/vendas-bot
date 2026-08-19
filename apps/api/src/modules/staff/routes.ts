@@ -117,7 +117,10 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
     },
     async (request, reply) => {
       const tenantId = request.requireTenantId()
-      const { data, error } = await request.supabase
+      // `authenticated` não escreve mais em roles (migration 38): a permissão
+      // já foi conferida no onRequest, e o tenant_id vem do claim, nunca do
+      // corpo da requisição.
+      const { data, error } = await app.supabaseAdmin
         .from('roles')
         .insert({
           tenant_id: tenantId,
@@ -238,10 +241,29 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     async (request) => {
+      const tenantId = request.requireTenantId()
+
       // Um gestor desativar a si mesmo deixaria o estabelecimento sem acesso
       // no meio do expediente.
       if (request.body.isActive === false && request.params.id === request.auth!.userId) {
         throw app.httpErrors.badRequest('Você não pode desativar a própria conta')
+      }
+
+      // Trocar o próprio papel é a escalada clássica: quem tem staff.write se
+      // promoveria a Proprietário sem ninguém aprovar. O banco também barra
+      // (trigger users_enforce_privileges), mas a mensagem aqui é útil.
+      if (request.body.roleId !== undefined && request.params.id === request.auth!.userId) {
+        throw app.httpErrors.badRequest('Você não pode alterar o próprio papel')
+      }
+
+      // Papel de outro estabelecimento traria permissões de fora para dentro.
+      if (request.body.roleId !== undefined) {
+        const { data: role } = await request.supabase
+          .from('roles')
+          .select('id')
+          .eq('id', request.body.roleId)
+          .maybeSingle()
+        if (!role) throw app.httpErrors.badRequest('Papel não encontrado')
       }
 
       const patch: Record<string, unknown> = {}
@@ -250,10 +272,13 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
       if (request.body.name !== undefined) patch.name = request.body.name
       if (request.body.phone !== undefined) patch.phone = request.body.phone
 
-      const { data, error } = await request.supabase
+      // supabaseAdmin ignora RLS: o recorte por estabelecimento passa a ser
+      // responsabilidade deste filtro, e não pode faltar.
+      const { data, error } = await app.supabaseAdmin
         .from('users')
         .update(patch)
         .eq('id', request.params.id)
+        .eq('tenant_id', tenantId)
         .select('id, name, phone, is_active, role_id, roles(name)')
         .maybeSingle()
 

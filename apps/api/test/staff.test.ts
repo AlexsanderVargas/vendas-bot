@@ -87,6 +87,30 @@ describe('rotas de equipe e papéis', () => {
     expect(res.json().message).toContain('própria conta')
   })
 
+  it('impede o funcionário de trocar o próprio papel', async () => {
+    // Escalada de privilégio clássica: quem administra a equipe se promoveria
+    // a Proprietário sem ninguém aprovar.
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/staff/${STAFF_A}`,
+      headers: bearer(await staffToken()),
+      payload: { roleId: ROLE_OWNER },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().message).toContain('próprio papel')
+  })
+
+  it('recusa papel que não pertence ao estabelecimento', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/staff/00000000-0000-0000-0000-0000000000a9',
+      headers: bearer(await staffToken()),
+      payload: { roleId: '11111111-1111-1111-1111-111111111111' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().message).toContain('Papel não encontrado')
+  })
+
   it('permite desativar outro funcionário', async () => {
     const res = await app.inject({
       method: 'PATCH',
