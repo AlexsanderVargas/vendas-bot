@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useCartSync } from './use-cart-sync'
 import { EMPTY_CART, type CartItem, type CartState } from './types'
 
-const STORAGE_PREFIX = 'vendas-bot:cart:'
+const STORAGE_PREFIX = 'gastrosync:cart:'
 
 interface CartContextValue {
   items: CartItem[]
