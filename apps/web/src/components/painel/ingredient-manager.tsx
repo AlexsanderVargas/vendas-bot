@@ -52,7 +52,12 @@ export function IngredientManager() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     const isPerishable = form.get('isPerishable') === 'on'
     setError(null)
     try {
@@ -67,7 +72,7 @@ export function IngredientManager() {
           shelfLifeDays: isPerishable ? Number(form.get('shelfLifeDays') || 0) || null : null,
         }),
       })
-      event.currentTarget.reset()
+      formElement.reset()
       await load()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível salvar o insumo.')
