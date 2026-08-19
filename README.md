@@ -71,7 +71,7 @@ bash scripts/seed.sh  # estabelecimento de demonstração, para avaliar as telas
 | 8 — Identidade Visual | Marca do cliente no cardápio e no painel: cores, fonte, logo, capa, biblioteca de mídias | #46 |
 | 9 — Operação e Homologação | Guia de provisionamento, worker de polling e fila fiscal, seed de demonstração | #51 |
 | 10 — Revisão Gauntlet | Isolamento entre estabelecimentos nas funções `SECURITY DEFINER`, críticos de pagamento, eventos de marketplace, CPF opcional, estados de erro e cache do cardápio | #62 |
-| 11 — Acesso segmentado | Cliente por SSO, equipe por usuário/e-mail e senha no painel do próprio estabelecimento, e o fim da escalada de privilégio no cadastro de equipe | — |
+| 12 — Acesso segmentado | Cliente por SSO, equipe por usuário/e-mail e senha no painel do próprio estabelecimento, e o fim da escalada de privilégio no cadastro de equipe | — |
 
 ## O que está verificado e o que não está
 
