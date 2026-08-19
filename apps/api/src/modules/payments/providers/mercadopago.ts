@@ -45,6 +45,30 @@ export function createMercadoPagoProvider(options: MercadoPagoOptions): PaymentP
   const fetchImpl = options.fetchImpl ?? fetch
   const baseUrl = options.baseUrl ?? API_BASE
 
+  /**
+   * Contrato: (paymentId) -> Promise<PaymentIntentStatus | null>
+   *
+   * A notificação do Mercado Pago carrega apenas o id da cobrança — o status
+   * real só existe na API. Devolve null quando a consulta falha: o handler
+   * mantém 'processing' e o gateway reenvia a notificação, que é preferível a
+   * gravar um status inventado.
+   */
+  async function fetchPaymentStatus(paymentId: string): Promise<PaymentIntentStatus | null> {
+    if (!paymentId) return null
+    try {
+      const response = await fetchImpl(`${baseUrl}/v1/payments/${paymentId}`, {
+        method: 'GET',
+        headers: { authorization: `Bearer ${options.accessToken}` },
+      })
+      if (!response?.ok) return null
+      const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null
+      if (!payload?.status) return null
+      return mapMercadoPagoStatus(String(payload.status))
+    } catch {
+      return null
+    }
+  }
+
   return {
     name: 'mercadopago',
 
@@ -130,11 +154,16 @@ export function createMercadoPagoProvider(options: MercadoPagoOptions): PaymentP
         return { valid: false, reason: 'assinatura inválida' }
       }
 
+      // Sem esta consulta toda notificação viraria 'processing' e nenhum PIX
+      // do Mercado Pago chegaria a 'approved'.
+      const status = await fetchPaymentStatus(paymentId)
+
       return {
         valid: true,
         eventId: `${paymentId}:${body.id ?? timestamp}`,
         eventType: String(body.action ?? body.type ?? 'payment.updated'),
         providerPaymentId: paymentId,
+        ...(status ? { status } : {}),
       }
     },
   }
