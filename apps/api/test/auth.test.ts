@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { hasPermission } from '../src/plugins/auth.js'
+import { createFakeSupabase, type FakeWrites, type TableRows } from './fake-supabase.js'
 import { bearer, buildTestServer, customerToken, signToken, staffToken, STAFF_A, TENANT_A } from './helpers.js'
 
 describe('resolução de permissões RBAC', () => {
@@ -105,5 +106,78 @@ describe('GET /api/v1/me', () => {
       headers: { authorization: await staffToken() },
     })
     expect(res.statusCode).toBe(401)
+  })
+})
+
+describe('PUT /api/v1/me/senha', () => {
+  const TABLES: TableRows = {
+    users: [
+      {
+        id: STAFF_A,
+        tenant_id: TENANT_A,
+        is_active: true,
+        name: 'Staff A',
+        role_id: 'f0000000-0000-0000-0000-0000000000aa',
+        must_change_password: true,
+        roles: { permissions: { '*': true } },
+      },
+    ],
+  }
+
+  let app: FastifyInstance
+  const writes: FakeWrites = { inserted: [], updated: [], deleted: [], signed: [], removed: [] }
+
+  beforeAll(async () => {
+    app = await buildTestServer()
+    app.addHook('onRequest', async (request) => {
+      const fake = createFakeSupabase(TABLES, {}, writes)
+      request.supabase = fake
+      Object.defineProperty(app, 'supabaseAdmin', { value: fake, configurable: true })
+    })
+  })
+  afterAll(async () => {
+    await app.close()
+  })
+
+  it('recusa cliente B2C: quem entra por SSO não tem senha', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/me/senha',
+      headers: bearer(await customerToken()),
+      payload: { password: 'senha-bem-longa' },
+    })
+    expect(response.statusCode).toBe(403)
+  })
+
+  it('recusa senha curta', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/me/senha',
+      headers: bearer(await staffToken()),
+      payload: { password: 'curta' },
+    })
+    expect(response.statusCode).toBe(400)
+  })
+
+  it('troca a senha e encerra a obrigação de troca', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/me/senha',
+      headers: bearer(await staffToken()),
+      payload: { password: 'uma-senha-de-verdade' },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ mustChangePassword: false })
+    expect(writes.authUpdated!.at(-1)).toMatchObject({
+      id: STAFF_A,
+      password: 'uma-senha-de-verdade',
+    })
+    // A bandeira só baixa junto com a troca de fato: fosse editável pelo
+    // próprio usuário, bastaria limpá-la para seguir na senha temporária.
+    expect(writes.updated.at(-1)).toMatchObject({
+      table: 'users',
+      patch: { must_change_password: false },
+    })
   })
 })

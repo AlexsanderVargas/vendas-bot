@@ -21,6 +21,15 @@ const DocumentResponse = Type.Object({
   document: Type.Union([Type.String(), Type.Null()]),
 })
 
+const PasswordBody = Type.Object({
+  password: Type.String({ minLength: 8, maxLength: 72 }),
+})
+
+const PasswordResponse = Type.Object({
+  /** Sempre false depois da troca: a senha deixou de ser a temporária. */
+  mustChangePassword: Type.Boolean(),
+})
+
 const meRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/me',
@@ -90,6 +99,45 @@ const meRoutes: FastifyPluginAsyncTypebox = async (app) => {
       if (!data) throw app.httpErrors.notFound('Cadastro de cliente não encontrado')
 
       return { document: (data.cpf_cnpj as string | null) ?? null }
+    },
+  )
+
+  app.put(
+    '/me/senha',
+    {
+      onRequest: app.requireStaff,
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+      schema: {
+        tags: ['auth'],
+        description:
+          'Troca a senha do próprio acesso de funcionário e encerra a obrigação de troca. Cliente não usa senha: entra por SSO.',
+        security: [{ bearerAuth: [] }],
+        body: PasswordBody,
+        response: { 200: PasswordResponse, ...StandardErrors },
+      },
+    },
+    async (request) => {
+      const userId = request.auth!.userId
+      const tenantId = request.requireTenantId()
+
+      // A troca corre pelo Admin API porque `must_change_password` não está
+      // nos grants de `authenticated` (migration 38): quem levanta a bandeira
+      // é quem administra, quem a baixa é o servidor, depois de trocar mesmo
+      // a senha. Fosse a bandeira editável pelo próprio usuário, bastaria
+      // limpá-la para seguir usando a senha temporária.
+      const { error: passwordError } = await app.supabaseAdmin.auth.admin.updateUserById(userId, {
+        password: request.body.password,
+      })
+      if (passwordError) throw app.httpErrors.badRequest(passwordError.message)
+
+      const { error: flagError } = await app.supabaseAdmin
+        .from('users')
+        .update({ must_change_password: false })
+        .eq('id', userId)
+        .eq('tenant_id', tenantId)
+      if (flagError) throw app.httpErrors.internalServerError(flagError.message)
+
+      return { mustChangePassword: false }
     },
   )
 }
