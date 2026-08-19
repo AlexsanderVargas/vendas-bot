@@ -70,6 +70,8 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
   private limitTo: number | null = null
   private rangeFrom = 0
   private rangeTo: number | null = null
+  private countMode = false
+  private headOnly = false
 
   constructor(
     private readonly rows: ReadonlyArray<Record<string, unknown>>,
@@ -77,7 +79,13 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
     private readonly writes: FakeWrites | null = null,
   ) {}
 
-  select(): this {
+  /**
+   * Aceita a forma `select(colunas, { count: 'exact', head: true })` do
+   * supabase-js: nesse modo a resposta traz `count` e nenhuma linha.
+   */
+  select(_columns?: string, options?: { count?: string; head?: boolean }): this {
+    if (options?.count) this.countMode = true
+    if (options?.head) this.headOnly = true
     return this
   }
 
@@ -177,6 +185,12 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null }> {
   then<TResult1 = { data: unknown; error: null }, TResult2 = never>(
     onfulfilled?: ((value: { data: unknown; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
   ): PromiseLike<TResult1 | TResult2> {
-    return Promise.resolve({ data: this.resolve(), error: null }).then(onfulfilled)
+    const rows = this.resolve()
+    const payload = {
+      data: this.headOnly ? null : rows,
+      error: null,
+      ...(this.countMode ? { count: rows.length } : {}),
+    }
+    return Promise.resolve(payload as { data: unknown; error: null }).then(onfulfilled)
   }
 }

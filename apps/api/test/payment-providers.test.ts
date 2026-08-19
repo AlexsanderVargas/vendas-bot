@@ -133,6 +133,46 @@ describe('Mercado Pago', () => {
     expect(result.providerPaymentId).toBe('999')
   })
 
+  it('consulta o status real da cobrança: a notificação só carrega o id', async () => {
+    const secret = 'segredo'
+    const ts = Math.floor(Date.now() / 1000)
+    const v1 = hmacSha256Hex(secret, `id:999;request-id:req-1;ts:${ts};`)
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) =>
+      jsonResponse({ id: 999, status: 'approved' }),
+    )
+
+    const provider = createMercadoPagoProvider({ accessToken: 'tok', webhookSecret: secret, fetchImpl })
+    const result = await provider.verifyWebhook(
+      { 'x-signature': `ts=${ts},v1=${v1}`, 'x-request-id': 'req-1' },
+      JSON.stringify({ action: 'payment.updated', data: { id: 999 } }),
+    )
+
+    const [url, init] = fetchImpl.mock.calls[0]!
+    expect(url).toBe('https://api.mercadopago.com/v1/payments/999')
+    expect((init!.headers as Record<string, string>).authorization).toBe('Bearer tok')
+    // Sem isto o pagamento aprovado ficaria eternamente em 'processing'.
+    expect(result.status).toBe('approved')
+  })
+
+  it('não inventa status quando a consulta à API falha', async () => {
+    const secret = 'segredo'
+    const ts = Math.floor(Date.now() / 1000)
+    const v1 = hmacSha256Hex(secret, `id:999;request-id:req-1;ts:${ts};`)
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => {
+      throw new Error('rede fora')
+    })
+
+    const provider = createMercadoPagoProvider({ accessToken: 'tok', webhookSecret: secret, fetchImpl })
+    const result = await provider.verifyWebhook(
+      { 'x-signature': `ts=${ts},v1=${v1}`, 'x-request-id': 'req-1' },
+      JSON.stringify({ action: 'payment.updated', data: { id: 999 } }),
+    )
+
+    // A notificação segue válida; o handler mantém 'processing' e o gateway reenvia.
+    expect(result.valid).toBe(true)
+    expect(result.status).toBeUndefined()
+  })
+
   it('recusa assinatura adulterada', async () => {
     const ts = Math.floor(Date.now() / 1000)
     const provider = createMercadoPagoProvider({
@@ -256,9 +296,55 @@ describe('Asaas', () => {
     expect(toAsaasDueDate(new Date('2026-08-19T15:00:00Z'))).toBe('2026-08-19')
   })
 
-  it('exige o identificador do cliente antes de cobrar', async () => {
+  it('exige CPF/CNPJ quando não há cliente cadastrado no provedor', async () => {
     const provider = createAsaasProvider({ apiKey: 'k', webhookToken: 't', fetchImpl: vi.fn() })
-    await expect(provider.createPayment(INPUT)).rejects.toBeInstanceOf(PaymentProviderError)
+    await expect(
+      provider.createPayment({ ...INPUT, payer: { ...INPUT.payer, document: null } }),
+    ).rejects.toBeInstanceOf(PaymentProviderError)
+  })
+
+  it('reaproveita o cliente já cadastrado com o mesmo CPF', async () => {
+    const fetchImpl = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.includes('/v3/customers?cpfCnpj=')) return jsonResponse({ data: [{ id: 'cus_ja_existe' }] })
+      if (url.endsWith('/pixQrCode')) return jsonResponse({ payload: '00020126PIX' })
+      return jsonResponse({ id: 'pay_9', status: 'PENDING' })
+    })
+
+    const provider = createAsaasProvider({ apiKey: 'chave', webhookToken: 't', fetchImpl })
+    await provider.createPayment(INPUT)
+
+    // Nenhum POST de cadastro: o cliente encontrado é reaproveitado.
+    const criouCliente = fetchImpl.mock.calls.some(
+      ([url, init]) => url.endsWith('/v3/customers') && init?.method === 'POST',
+    )
+    expect(criouCliente).toBe(false)
+
+    const cobranca = fetchImpl.mock.calls.find(([url]) => url.endsWith('/v3/payments'))!
+    expect(JSON.parse(String(cobranca[1]!.body)).customer).toBe('cus_ja_existe')
+  })
+
+  it('cadastra o cliente quando o CPF ainda não existe no Asaas', async () => {
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/v3/customers?cpfCnpj=')) return jsonResponse({ data: [] })
+      if (url.endsWith('/v3/customers') && init?.method === 'POST') {
+        return jsonResponse({ id: 'cus_novo' })
+      }
+      if (url.endsWith('/pixQrCode')) return jsonResponse({ payload: '00020126PIX' })
+      return jsonResponse({ id: 'pay_10', status: 'PENDING' })
+    })
+
+    const provider = createAsaasProvider({ apiKey: 'chave', webhookToken: 't', fetchImpl })
+    await provider.createPayment(INPUT)
+
+    const cadastro = fetchImpl.mock.calls.find(
+      ([url, init]) => url.endsWith('/v3/customers') && init?.method === 'POST',
+    )!
+    const enviado = JSON.parse(String(cadastro[1]!.body))
+    expect(enviado.cpfCnpj).toBe('12345678909')
+    expect(enviado.email).toBe('cliente@exemplo.com')
+
+    const cobranca = fetchImpl.mock.calls.find(([url]) => url.endsWith('/v3/payments'))!
+    expect(JSON.parse(String(cobranca[1]!.body)).customer).toBe('cus_novo')
   })
 
   it('cria a cobrança e busca o QR do PIX no segundo endpoint', async () => {

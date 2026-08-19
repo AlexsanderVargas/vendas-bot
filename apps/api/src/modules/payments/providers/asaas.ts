@@ -62,16 +62,67 @@ export function createAsaasProvider(options: AsaasOptions): PaymentProvider {
   const baseUrl = options.baseUrl ?? API_BASE
   const now = options.now ?? (() => new Date())
 
+  /**
+   * Contrato: (input) -> Promise<string> — id do cliente no Asaas.
+   *
+   * O Asaas cobra sempre em nome de um `customer` cadastrado, e o cadastro
+   * exige CPF/CNPJ. Busca antes de criar porque a API aceita duplicatas: sem
+   * a busca, cada pedido criaria um cliente novo para a mesma pessoa.
+   */
+  async function ensureCustomer(input: CreatePaymentInput): Promise<string> {
+    const document = (input.payer.document ?? '').replace(/\D/g, '')
+    if (!document) {
+      throw new PaymentProviderError(
+        'O Asaas exige o CPF ou CNPJ do cliente para gerar a cobrança',
+        400,
+      )
+    }
+
+    const existing = await fetchImpl(`${baseUrl}/v3/customers?cpfCnpj=${document}`, {
+      method: 'GET',
+      headers: { access_token: options.apiKey },
+    })
+    if (existing?.ok) {
+      const found = (await existing.json().catch(() => null)) as
+        | { data?: { id?: string }[] }
+        | null
+      const id = found?.data?.[0]?.id
+      if (id) return String(id)
+    }
+
+    const response = await fetchImpl(`${baseUrl}/v3/customers`, {
+      method: 'POST',
+      headers: {
+        access_token: options.apiKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: input.payer.name ?? input.payer.email,
+        email: input.payer.email,
+        cpfCnpj: document,
+        externalReference: document,
+      }),
+    })
+
+    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null
+    if (!response.ok || !payload?.id) {
+      throw new PaymentProviderError(
+        `Asaas recusou o cadastro do cliente (HTTP ${response.status})`,
+        response.status,
+        payload,
+      )
+    }
+
+    return String(payload.id)
+  }
+
   return {
     name: 'asaas',
 
     async createPayment(input: CreatePaymentInput): Promise<CreatePaymentResult> {
-      if (!input.providerCustomerId) {
-        throw new PaymentProviderError(
-          'Asaas exige o identificador do cliente (customer) para cobrar',
-          400,
-        )
-      }
+      // Quando o chamador não traz a referência do cliente, ela é resolvida a
+      // partir dos dados do pagador.
+      const customerId = input.providerCustomerId ?? (await ensureCustomer(input))
 
       const dueDate = new Date(now().getTime() + (options.dueInDays ?? 1) * 86_400_000)
 
@@ -82,7 +133,7 @@ export function createAsaasProvider(options: AsaasOptions): PaymentProvider {
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          customer: input.providerCustomerId,
+          customer: customerId,
           billingType: BILLING_TYPE[input.method],
           value: input.amount,
           dueDate: toAsaasDueDate(dueDate),
