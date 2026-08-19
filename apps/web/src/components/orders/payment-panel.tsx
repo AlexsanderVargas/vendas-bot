@@ -53,11 +53,18 @@ export function PaymentPanel({
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [optionsError, setOptionsError] = useState<string | null>(null)
 
   useEffect(() => {
     void apiFetch<PaymentOptions>(`/public/payment-options?tenantSlug=${tenantSlug}`)
-      .then(setOptions)
-      .catch(() => setOptions(null))
+      .then((loaded) => {
+        setOptions(loaded)
+        setOptionsError(null)
+      })
+      .catch(() => {
+        setOptions(null)
+        setOptionsError('Não foi possível carregar as formas de pagamento.')
+      })
   }, [tenantSlug])
 
   // Confirmação do PIX chega por Realtime, sem o cliente precisar recarregar.
@@ -106,6 +113,19 @@ export function PaymentPanel({
       <section className="rounded-xl border border-border p-4">
         <p className="font-medium">Pagamento confirmado</p>
         <p className="text-sm text-muted-foreground">Obrigado! Já recebemos {formatBRL(total)}.</p>
+      </section>
+    )
+  }
+
+  // Sumir com a seção inteira deixaria o cliente sem saber que há o que pagar.
+  if (optionsError) {
+    return (
+      <section role="alert" className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm">
+        <p className="text-destructive">{optionsError}</p>
+        <p className="mt-1 text-muted-foreground">
+          Atualize a página para tentar de novo, ou combine o pagamento direto com o
+          estabelecimento.
+        </p>
       </section>
     )
   }

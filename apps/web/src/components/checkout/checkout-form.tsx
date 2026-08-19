@@ -44,6 +44,7 @@ export function CheckoutForm({ tenant }: { tenant: MenuTenant }) {
   const [quote, setQuote] = useState<DeliveryQuote | null>(null)
   const [notes, setNotes] = useState('')
   const [taxId, setTaxId] = useState('')
+  const [quoteError, setQuoteError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [position, setPosition] = useState<{ latitude: number; longitude: number } | null>(null)
@@ -92,8 +93,14 @@ export function CheckoutForm({ tenant }: { tenant: MenuTenant }) {
           }),
         }),
       )
+      setQuoteError(null)
     } catch {
       setQuote(null)
+      // Sem isto o botão fica desabilitado e o cliente não descobre por quê:
+      // ele abandona o carrinho achando que o site está quebrado.
+      setQuoteError(
+        'Não foi possível calcular a taxa de entrega agora. Tente novamente em instantes ou escolha retirada.',
+      )
     }
   }, [channel, addresses, addressId, subtotal, tenant.slug])
 
@@ -323,6 +330,19 @@ export function CheckoutForm({ tenant }: { tenant: MenuTenant }) {
           próximas compras.
         </span>
       </label>
+
+      {quoteError && channel === 'delivery' ? (
+        <div role="alert" className="flex flex-col gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+          <p className="text-sm text-destructive">{quoteError}</p>
+          <button
+            type="button"
+            onClick={() => void refreshQuote()}
+            className="self-start text-sm font-medium underline underline-offset-4"
+          >
+            Recalcular
+          </button>
+        </div>
+      ) : null}
 
       {error ? (
         <p role="alert" className="text-sm text-destructive">
