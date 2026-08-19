@@ -10,9 +10,15 @@ create table if not exists auth.users (
 );
 
 -- Claims simulados por GUC de sessão (o PostgREST usa o mesmo mecanismo).
+-- O PostgREST publica os claims em request.jwt.claims; o GUC individual
+-- request.jwt.claim.sub é o atalho usado pelas asserções deste diretório.
+-- Ler os dois deixa o stub fiel ao Supabase sem quebrar os testes.
 create or replace function auth.uid() returns uuid
 language sql stable as $$
-  select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid;
+  select coalesce(
+    nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'sub', ''),
+    nullif(current_setting('request.jwt.claim.sub', true), '')
+  )::uuid;
 $$;
 
 create or replace function auth.jwt() returns jsonb
