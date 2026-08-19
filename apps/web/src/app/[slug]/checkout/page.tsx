@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { getPublicMenu } from '@vendas-bot/shared'
+import { getMenuTenant } from '@vendas-bot/shared'
 import { createClient } from '@/lib/supabase/server'
 import { CheckoutForm } from '@/components/checkout/checkout-form'
 
@@ -12,13 +12,15 @@ export default async function CheckoutPage({ params }: { params: Promise<{ slug:
     redirect(`/login?tenant=${slug}&next=${encodeURIComponent(`/${slug}/checkout`)}`)
   }
 
-  const menu = await getPublicMenu(supabase, slug)
-  if (!menu) notFound()
+  // Só o estabelecimento: o checkout não usa o cardápio, e carregá-lo custava
+  // quatro consultas e a serialização de todos os produtos.
+  const tenant = await getMenuTenant(supabase, slug)
+  if (!tenant) notFound()
 
   return (
     <main className="mx-auto max-w-2xl px-4 pb-24">
       <h1 className="pt-8 text-2xl font-bold tracking-tight">Finalizar pedido</h1>
-      <CheckoutForm tenant={menu.tenant} />
+      <CheckoutForm tenant={tenant} />
     </main>
   )
 }

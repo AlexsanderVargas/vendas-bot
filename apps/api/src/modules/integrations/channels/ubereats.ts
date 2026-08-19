@@ -10,6 +10,7 @@ import type {
   OrderAction,
 } from './types.js'
 import { ChannelError, isTokenValid } from './types.js'
+import { withTimeout } from '../../../lib/fetch-timeout.js'
 
 const AUTH_BASE = 'https://auth.uber.com'
 const API_BASE = 'https://api.uber.com'
@@ -143,6 +144,8 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export interface UberEatsChannelOptions {
+  /** Prazo por chamada, em ms. Padrão: 20s. */
+  readonly timeoutMs?: number
   readonly credentials: ChannelCredentials
   readonly fetchImpl?: FetchLike
   readonly authBaseUrl?: string
@@ -151,7 +154,9 @@ export interface UberEatsChannelOptions {
 }
 
 export function createUberEatsChannel(options: UberEatsChannelOptions): MarketplaceChannel {
-  const fetchImpl = options.fetchImpl ?? fetch
+  // Prazo obrigatório: sem ele um parceiro pendurado congela o worker
+  // inteiro, e nenhum estabelecimento recebe pedido.
+  const fetchImpl = withTimeout(options.fetchImpl ?? fetch, options.timeoutMs)
   const authBase = options.authBaseUrl ?? AUTH_BASE
   const apiBase = options.apiBaseUrl ?? API_BASE
   let token = options.credentials.accessToken ?? null
