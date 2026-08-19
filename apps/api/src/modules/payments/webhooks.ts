@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { resolveProvider, type ProviderName } from './providers/index.js'
 import { toCredentials } from './routes.js'
 
@@ -37,12 +37,15 @@ const webhookRoutes: FastifyPluginAsync = async (app) => {
 
       const rawBody = typeof request.body === 'string' ? request.body : ''
 
-      // O tenant é descoberto pela cobrança referenciada; até lá, tenta-se
-      // cada configuração que use este provedor. Em produção, o ideal é uma
-      // URL de webhook por estabelecimento — fica registrado como melhoria.
-      const { data: settingsList } = await app.supabaseAdmin
-        .from('payment_settings')
-        .select(SETTINGS_COLUMNS)
+      // Caminho rápido: a notificação referencia uma cobrança nossa, e a
+      // cobrança diz de qual estabelecimento é. Assim carregamos os segredos de
+      // UM tenant em vez da tabela inteira — menos trabalho por notificação e,
+      // sobretudo, menos superfície de exposição das chaves de gateway.
+      //
+      // O id extraído aqui vem de corpo NÃO verificado e serve apenas como
+      // chave de busca parametrizada: a assinatura continua sendo conferida
+      // antes de qualquer efeito.
+      const settingsList = await loadCandidateSettings(app, providerName as ProviderName, rawBody)
 
       const headers = request.headers as Record<string, string | undefined>
 
@@ -93,6 +96,77 @@ const webhookRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(401).send({ received: false, reason: 'assinatura inválida' })
     },
   )
+}
+
+/** Coluna que prova que o estabelecimento usa aquele gateway. */
+const WEBHOOK_SECRET_COLUMN: Record<ProviderName, string> = {
+  mercadopago: 'mercadopago_webhook_secret',
+  stripe: 'stripe_webhook_secret',
+  asaas: 'asaas_webhook_token',
+}
+
+/**
+ * Contrato: (provider, rawBody) -> string | null
+ * Identificador da cobrança no provedor, lido do corpo SEM validar assinatura.
+ * Serve só como pista de busca; nada é aplicado a partir dele.
+ */
+export function extractProviderPaymentId(provider: ProviderName, rawBody: string): string | null {
+  try {
+    const body = JSON.parse(rawBody) as Record<string, unknown>
+    if (provider === 'mercadopago') {
+      const data = body.data as { id?: unknown } | undefined
+      return data?.id == null ? null : String(data.id)
+    }
+    if (provider === 'stripe') {
+      const data = body.data as { object?: { id?: unknown } } | undefined
+      return data?.object?.id == null ? null : String(data.object.id)
+    }
+    const payment = body.payment as { id?: unknown } | undefined
+    return payment?.id == null ? null : String(payment.id)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Contrato: (app, provider, rawBody) -> Promise<unknown[]>
+ * Configurações candidatas a validar esta notificação: a do estabelecimento
+ * dono da cobrança quando ela é identificável, senão apenas as que têm o
+ * gateway configurado — nunca a tabela inteira.
+ */
+async function loadCandidateSettings(
+  app: FastifyInstance,
+  provider: ProviderName,
+  rawBody: string,
+): Promise<Record<string, unknown>[]> {
+  const providerPaymentId = extractProviderPaymentId(provider, rawBody)
+
+  if (providerPaymentId) {
+    const { data: payment } = await app.supabaseAdmin
+      .from('payments')
+      .select('tenant_id')
+      .eq('provider', provider)
+      .eq('provider_payment_id', providerPaymentId)
+      .maybeSingle()
+
+    if (payment?.tenant_id) {
+      const { data } = await app.supabaseAdmin
+        .from('payment_settings')
+        .select(SETTINGS_COLUMNS)
+        .eq('tenant_id', payment.tenant_id)
+        .maybeSingle()
+      if (data) return [data as Record<string, unknown>]
+    }
+  }
+
+  // Cobrança ainda desconhecida (primeira notificação chegando antes do nosso
+  // registro, ou evento sem referência): restringe ao gateway em questão.
+  const { data } = await app.supabaseAdmin
+    .from('payment_settings')
+    .select(SETTINGS_COLUMNS)
+    .not(WEBHOOK_SECRET_COLUMN[provider], 'is', null)
+
+  return (data ?? []) as Record<string, unknown>[]
 }
 
 /** Contrato: (raw) -> unknown — nunca lança; corpo inválido vira objeto vazio. */

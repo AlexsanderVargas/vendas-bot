@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Vendas Bot — Cardápio Digital',
+  title: 'GastroSync — Cardápio Digital',
   description: 'Peça online no seu restaurante favorito.',
 }
 

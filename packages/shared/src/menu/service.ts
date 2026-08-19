@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { GeoPoint, MenuProduct, MenuResponse } from './types.js'
+import type { GeoPoint, MenuProduct, MenuResponse, MenuTenant } from './types.js'
 
 interface OptionRow {
   id: string
@@ -38,15 +38,56 @@ interface ProductRow {
  * aninhados para manter os índices em uso (products_menu_idx,
  * option_groups_product_idx) e o payload previsível.
  */
+const TENANT_COLUMNS =
+  'id, slug, name, delivery_fee_mode, address_street, address_number, neighborhood, city, state, zip_code, location'
+
+/** Contrato: (row) -> MenuTenant */
+function toMenuTenant(tenant: Record<string, unknown>): MenuTenant {
+  return {
+    id: tenant.id as string,
+    slug: tenant.slug as string,
+    name: tenant.name as string,
+    deliveryFeeMode: tenant.delivery_fee_mode as MenuTenant['deliveryFeeMode'],
+    address: {
+      street: tenant.address_street as string,
+      number: tenant.address_number as string,
+      neighborhood: tenant.neighborhood as string,
+      city: tenant.city as string,
+      state: tenant.state as string,
+      zipCode: tenant.zip_code as string,
+    },
+    location: parseLocation(tenant.location),
+  }
+}
+
+/**
+ * Contrato: (supabase, slug) -> Promise<MenuTenant | null>
+ *
+ * Só o estabelecimento, sem cardápio. Existe para telas que precisam do nome e
+ * do endereço mas não dos produtos — o checkout, por exemplo, gastava quatro
+ * consultas e serializava o cardápio inteiro para usar um punhado de campos.
+ */
+export async function getMenuTenant(
+  supabase: SupabaseClient,
+  slug: string,
+): Promise<MenuTenant | null> {
+  const { data } = await supabase
+    .from('tenants')
+    .select(TENANT_COLUMNS)
+    .eq('slug', slug)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  return data ? toMenuTenant(data as Record<string, unknown>) : null
+}
+
 export async function getPublicMenu(
   supabase: SupabaseClient,
   slug: string,
 ): Promise<MenuResponse | null> {
   const { data: tenant } = await supabase
     .from('tenants')
-    .select(
-      'id, slug, name, delivery_fee_mode, address_street, address_number, neighborhood, city, state, zip_code, location',
-    )
+    .select(TENANT_COLUMNS)
     .eq('slug', slug)
     .eq('is_active', true)
     .maybeSingle()
@@ -125,21 +166,7 @@ export async function getPublicMenu(
   const productsByCategory = groupBy(productRows, (product) => product.category_id ?? '')
 
   return {
-    tenant: {
-      id: tenant.id,
-      slug: tenant.slug,
-      name: tenant.name,
-      deliveryFeeMode: tenant.delivery_fee_mode,
-      address: {
-        street: tenant.address_street,
-        number: tenant.address_number,
-        neighborhood: tenant.neighborhood,
-        city: tenant.city,
-        state: tenant.state,
-        zipCode: tenant.zip_code,
-      },
-      location: parseLocation(tenant.location),
-    },
+    tenant: toMenuTenant(tenant as Record<string, unknown>),
     categories: (categories ?? []).map((category) => ({
       id: category.id,
       name: category.name,

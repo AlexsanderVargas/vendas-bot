@@ -9,6 +9,7 @@ import type {
   OrderAction,
 } from './types.js'
 import { ChannelError, isTokenValid } from './types.js'
+import { withTimeout } from '../../../lib/fetch-timeout.js'
 
 const API_BASE = 'https://merchant-api.ifood.com.br'
 
@@ -117,6 +118,8 @@ export function normalizeIfoodOrder(order: Record<string, unknown>): NormalizedO
 }
 
 export interface IfoodChannelOptions {
+  /** Prazo por chamada, em ms. Padrão: 20s. */
+  readonly timeoutMs?: number
   readonly credentials: ChannelCredentials
   readonly fetchImpl?: FetchLike
   readonly baseUrl?: string
@@ -125,7 +128,9 @@ export interface IfoodChannelOptions {
 }
 
 export function createIfoodChannel(options: IfoodChannelOptions): MarketplaceChannel {
-  const fetchImpl = options.fetchImpl ?? fetch
+  // Prazo obrigatório: sem ele um parceiro pendurado congela o worker
+  // inteiro, e nenhum estabelecimento recebe pedido.
+  const fetchImpl = withTimeout(options.fetchImpl ?? fetch, options.timeoutMs)
   const baseUrl = options.baseUrl ?? API_BASE
   let token = options.credentials.accessToken ?? null
   let tokenExpiresAt = options.credentials.tokenExpiresAt ?? null

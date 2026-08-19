@@ -1,4 +1,4 @@
-# Vendas Bot — SaaS Gastronômico Multi-tenant
+# GastroSync — SaaS Gastronômico Multi-tenant
 
 Sistema SaaS multi-tenant para o setor gastronômico (lancherias, restaurantes, bares e afins), com módulo B2C completo de Cardápio Digital e Delivery para os clientes finais.
 

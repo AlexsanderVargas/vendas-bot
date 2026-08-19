@@ -7,6 +7,7 @@ import type {
   FiscalEmitter,
 } from './types.js'
 import { FiscalEmitterError } from './types.js'
+import { withTimeout } from '../../../lib/fetch-timeout.js'
 
 /**
  * Emissor genérico sobre HTTP.
@@ -21,6 +22,8 @@ import { FiscalEmitterError } from './types.js'
  * integrador, ajuste `paths` e `mapStatus` conforme a documentação dele.
  */
 export interface HttpFiscalEmitterOptions {
+  /** Prazo por chamada, em ms. Padrão: 20s. */
+  readonly timeoutMs?: number
   readonly baseUrl: string
   readonly apiKey: string
   readonly fetchImpl?: FetchLike
@@ -40,7 +43,9 @@ export function mapEmissionStatus(status: string): FiscalEmissionResult['status'
 }
 
 export function createHttpFiscalEmitter(options: HttpFiscalEmitterOptions): FiscalEmitter {
-  const fetchImpl = options.fetchImpl ?? fetch
+  // Prazo obrigatório: sem ele um parceiro pendurado congela o worker
+  // inteiro, e nenhum estabelecimento recebe pedido.
+  const fetchImpl = withTimeout(options.fetchImpl ?? fetch, options.timeoutMs)
   const authHeader = options.authHeader ?? 'authorization'
   const emitPath = options.emitPath ?? '/v2/nfce'
   const cancelPath = options.cancelPath ?? '/v2/nfce/cancel'
