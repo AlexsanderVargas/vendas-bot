@@ -14,17 +14,21 @@ export async function GET(request: NextRequest) {
   const tenant = searchParams.get('tenant')
   const oauthError = searchParams.get('error_description') ?? searchParams.get('error')
 
+  // Devolver a falha para a porta do estabelecimento, e não para a genérica:
+  // quem tentou entrar no cardápio de uma loja precisa voltar para ela.
+  const loginPath = tenant ? `/${tenant}/login` : '/login'
+
   if (oauthError) {
-    return NextResponse.redirect(`${origin}/login?erro=${encodeURIComponent(oauthError)}`)
+    return NextResponse.redirect(`${origin}${loginPath}?erro=${encodeURIComponent(oauthError)}`)
   }
   if (!code) {
-    return NextResponse.redirect(`${origin}/login?erro=codigo-ausente`)
+    return NextResponse.redirect(`${origin}${loginPath}?erro=codigo-ausente`)
   }
 
   const supabase = await createClient()
   const { error } = await supabase.auth.exchangeCodeForSession(code)
   if (error) {
-    return NextResponse.redirect(`${origin}/login?erro=${encodeURIComponent(error.message)}`)
+    return NextResponse.redirect(`${origin}${loginPath}?erro=${encodeURIComponent(error.message)}`)
   }
 
   if (tenant) {

@@ -13,7 +13,7 @@ export default async function PedidoPage({
   const supabase = await createClient()
 
   const { data: auth } = await supabase.auth.getUser()
-  if (!auth.user) redirect(`/login?tenant=${slug}&next=${encodeURIComponent(`/${slug}/pedidos/${id}`)}`)
+  if (!auth.user) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/pedidos/${id}`)}`)
 
   // A RLS já restringe ao próprio cliente: um pedido alheio simplesmente não vem.
   const { data: order } = await supabase

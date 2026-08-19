@@ -16,6 +16,10 @@ export default function LoginPage() {
           <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando…</p>}>
             <SocialLoginButtons />
           </Suspense>
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            Equipe de um estabelecimento entra pelo painel da própria loja, em{' '}
+            <code>/nome-do-estabelecimento/painel</code>.
+          </p>
         </CardContent>
       </Card>
     </main>

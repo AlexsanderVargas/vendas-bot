@@ -9,7 +9,7 @@ export default async function CheckoutPage({ params }: { params: Promise<{ slug:
 
   const { data: auth } = await supabase.auth.getUser()
   if (!auth.user) {
-    redirect(`/login?tenant=${slug}&next=${encodeURIComponent(`/${slug}/checkout`)}`)
+    redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/checkout`)}`)
   }
 
   // Só o estabelecimento: o checkout não usa o cardápio, e carregá-lo custava
