@@ -6,21 +6,35 @@ import type { Provider } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 
-/** Provedores OAuth 2.0 habilitados no Supabase Auth. */
+/**
+ * Provedores do CLIENTE. Só entram contas que consumidor de delivery já tem:
+ * GitHub é conta de desenvolvedor e não pertence a esta porta. A equipe do
+ * estabelecimento entra por outro caminho, com usuário e senha.
+ */
 const PROVIDERS: ReadonlyArray<{ id: Provider; label: string }> = [
   { id: 'google', label: 'Continuar com Google' },
   { id: 'facebook', label: 'Continuar com Facebook' },
   { id: 'azure', label: 'Continuar com Outlook' },
-  { id: 'github', label: 'Continuar com GitHub' },
 ]
 
-export function SocialLoginButtons() {
+interface SocialLoginButtonsProps {
+  /** Estabelecimento do cadastro, quando a tela já vive dentro de um slug. */
+  tenantSlug?: string
+  /** Destino após entrar, quando não vier por query string. */
+  defaultNext?: string
+}
+
+export function SocialLoginButtons({ tenantSlug, defaultNext }: SocialLoginButtonsProps = {}) {
   const searchParams = useSearchParams()
   const [pending, setPending] = useState<Provider | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const next = searchParams.get('next') ?? '/'
-  const tenant = searchParams.get('tenant')
+  const next = searchParams.get('next') ?? defaultNext ?? '/'
+  const tenant = searchParams.get('tenant') ?? tenantSlug ?? null
+
+  // O /auth/callback devolve a falha do provedor aqui. Sem exibir, quem tenta
+  // entrar e volta para a mesma tela não descobre que houve erro nenhum.
+  const callbackError = searchParams.get('erro')
 
   async function signIn(provider: Provider) {
     setPending(provider)
@@ -58,9 +72,13 @@ export function SocialLoginButtons() {
           {pending === provider.id ? 'Redirecionando…' : provider.label}
         </Button>
       ))}
-      {error ? (
+      {error || callbackError ? (
         <p role="alert" className="text-sm text-destructive">
-          Não foi possível iniciar o login: {error}
+          {error
+            ? `Não foi possível iniciar o login: ${error}`
+            : callbackError === 'codigo-ausente'
+              ? 'O link de entrada expirou ou já foi usado. Tente novamente.'
+              : `Não foi possível concluir o login: ${callbackError}`}
         </p>
       ) : null}
     </div>
