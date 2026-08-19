@@ -115,12 +115,23 @@ select test.assert(
    where session_id = (select id from t_caixa_conta) and type = 'withdrawal') = 1,
   'baixa de conta a pagar vira sangria no caixa');
 
--- Autorização.
+-- Autorização. A verificação é do VÍNCULO no banco, não do claim do JWT
+-- (migration 42): um claim que diz "sou funcionário daqui" não basta.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
 select set_config('request.jwt.claims',
-  '{"sub":"00000000-0000-0000-0000-0000000000a1","app_metadata":{"tenant_id":"10000000-0000-0000-0000-000000000002"}}', false);
+  '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"tenant_id":"10000000-0000-0000-0000-000000000001"}}', false);
 select test.assert(
   ((public.settle_account((select id from t_conta), 1.00))->>'error') = 'nao_autorizado',
-  'conta de outro estabelecimento não pode ser baixada');
+  'quem não é funcionário não baixa título, nem com o claim dizendo que é');
+
+-- E o funcionário de verdade segue sem alcançar a loja vizinha.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-0000000000a1","app_metadata":{"tenant_id":"10000000-0000-0000-0000-000000000001"}}', false);
+select test.assert(
+  ((public.settle_account('99999999-9999-9999-9999-999999999999', 1.00))->>'error')
+    = 'conta_nao_encontrada',
+  'título inexistente responde conta_nao_encontrada');
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{}}', false);
