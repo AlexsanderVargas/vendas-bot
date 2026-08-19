@@ -236,7 +236,7 @@ describe('rotas de equipe e papéis', () => {
     // Sem redirectTo o convite cairia na raiz do Site URL, que não sabe de
     // qual estabelecimento é o funcionário.
     expect(writes.authInvited!.at(-1)!.redirectTo).toBe(
-      'http://localhost:3000/lancheria-t1/painel/definir-senha',
+      'http://localhost:3000/auth/callback?next=%2Flancheria-t1%2Fpainel%2Fdefinir-senha',
     )
   })
 })
