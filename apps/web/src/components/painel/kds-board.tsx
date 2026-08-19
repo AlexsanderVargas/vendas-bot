@@ -103,17 +103,23 @@ export function KdsBoard() {
     return groups
   }, {})
 
+  // O erro vem ANTES do estado vazio: quando a carga falha, `items` fica
+  // vazio, e anunciar "nenhum item na fila" faria a cozinha parar de produzir
+  // com pedidos pendentes no banco.
+  if (error) {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {error}
+      </p>
+    )
+  }
+
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhum item na fila de preparo.</p>
   }
 
   return (
     <section className="flex flex-col gap-4">
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
 
       <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {Object.entries(byOrder).map(([orderId, orderItems]) => {
