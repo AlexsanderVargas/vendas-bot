@@ -250,7 +250,10 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const { data: invited, error: inviteError } =
         await app.supabaseAdmin.auth.admin.inviteUserByEmail(request.body.email, {
           data: { full_name: request.body.name },
-          redirectTo: `${app.config.webAppUrl}/${slug}/painel/definir-senha`,
+          // Passa pelo /auth/callback: é lá que o código do convite vira sessão
+          // em cookie. Apontar direto para a tela de senha entregaria um
+          // código que ninguém troca, e a pessoa chegaria deslogada.
+          redirectTo: `${app.config.webAppUrl}/auth/callback?next=${encodeURIComponent(`/${slug}/painel/definir-senha`)}`,
         })
 
       if (inviteError || !invited?.user) {
