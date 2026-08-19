@@ -52,7 +52,12 @@ export function FiscalManager({ products }: { products: Array<{ id: string; name
 
   async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     const productId = String(form.get('productId') || '')
     setError(null)
     setMessage(null)
@@ -70,7 +75,7 @@ export function FiscalManager({ products }: { products: Array<{ id: string; name
         }),
       })
       setMessage(productId ? 'Tributação do produto salva.' : 'Tributação padrão salva.')
-      event.currentTarget.reset()
+      formElement.reset()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível salvar a tributação.')
     }

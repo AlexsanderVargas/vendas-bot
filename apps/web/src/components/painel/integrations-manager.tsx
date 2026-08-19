@@ -109,7 +109,12 @@ export function IntegrationsManager({ products }: { products: Array<{ id: string
 
   async function connect(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setError(null)
     setMessage(null)
     try {
@@ -125,7 +130,7 @@ export function IntegrationsManager({ products }: { products: Array<{ id: string
         }),
       })
       setMessage('Canal conectado. As credenciais ficam apenas no servidor.')
-      event.currentTarget.reset()
+      formElement.reset()
       await load()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível conectar o canal.')
@@ -182,7 +187,12 @@ export function IntegrationsManager({ products }: { products: Array<{ id: string
   async function mapItem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selected) return
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setError(null)
     try {
       await apiFetch(`/integrations/${selected}/items`, {
@@ -193,7 +203,7 @@ export function IntegrationsManager({ products }: { products: Array<{ id: string
           productId: String(form.get('productId') || '') || null,
         }),
       })
-      event.currentTarget.reset()
+      formElement.reset()
       await loadDetails()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível mapear o item.')

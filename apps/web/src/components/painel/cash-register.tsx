@@ -63,7 +63,12 @@ export function CashRegister() {
 
   async function openSession(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setError(null)
     setMessage(null)
     try {
@@ -80,7 +85,12 @@ export function CashRegister() {
   async function addMovement(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!open) return
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setError(null)
     try {
       await apiFetch(`/cash/sessions/${open.id}/movements`, {
@@ -92,7 +102,7 @@ export function CashRegister() {
           reason: String(form.get('reason') || '') || null,
         }),
       })
-      event.currentTarget.reset()
+      formElement.reset()
       await load()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível registrar o movimento.')
@@ -102,7 +112,12 @@ export function CashRegister() {
   async function closeSession(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!open) return
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setError(null)
     try {
       const result = await apiFetch<{ expectedCash: number; countedAmount: number; difference: number }>(

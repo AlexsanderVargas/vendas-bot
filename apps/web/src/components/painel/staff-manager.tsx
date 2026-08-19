@@ -75,7 +75,12 @@ export function StaffManager() {
 
   async function invite(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    // O elemento precisa ser capturado ANTES do await: o React anula
+    // event.currentTarget quando o handler síncrono termina, e chamar
+    // .reset() depois lançaria TypeError — exibindo erro de falha em um
+    // salvamento que deu certo.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setError(null)
     setMessage(null)
     try {
@@ -89,7 +94,7 @@ export function StaffManager() {
         }),
       })
       setMessage('Convite enviado por e-mail.')
-      event.currentTarget.reset()
+      formElement.reset()
       await load()
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Não foi possível enviar o convite.')
