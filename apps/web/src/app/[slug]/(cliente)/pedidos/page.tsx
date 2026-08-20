@@ -14,7 +14,7 @@ export default async function HistoricoPage({ params }: { params: Promise<{ slug
   const supabase = await createClient()
 
   const { data: auth } = await supabase.auth.getUser()
-  if (!auth.user) redirect(`/login?tenant=${slug}&next=${encodeURIComponent(`/${slug}/pedidos`)}`)
+  if (!auth.user) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/pedidos`)}`)
 
   const { data: tenant } = await supabase.from('tenants').select('id').eq('slug', slug).maybeSingle()
 

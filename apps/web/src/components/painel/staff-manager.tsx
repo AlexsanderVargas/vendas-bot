@@ -27,6 +27,15 @@ interface StaffMember {
   isActive: boolean
   roleId: string
   roleName: string | null
+  login: string | null
+  mustChangePassword: boolean
+}
+
+/** Credencial recém-criada. Aparece uma única vez, aqui. */
+interface Credential {
+  name: string
+  login: string
+  temporaryPassword: string
 }
 
 export function StaffManager() {
@@ -36,6 +45,8 @@ export function StaffManager() {
   const [selectedRole, setSelectedRole] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [credential, setCredential] = useState<Credential | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -101,6 +112,70 @@ export function StaffManager() {
     }
   }
 
+  async function createAccess(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    // Capturado antes do await: o React anula event.currentTarget quando o
+    // handler síncrono termina.
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    setError(null)
+    setMessage(null)
+    setCredential(null)
+    setBusy(true)
+    try {
+      const created = await apiFetch<{ login: string; temporaryPassword: string }>('/staff', {
+        method: 'POST',
+        body: JSON.stringify({
+          login: String(form.get('login')),
+          name: String(form.get('name')),
+          roleId: String(form.get('roleId')),
+          phone: String(form.get('phone') || '') || null,
+        }),
+      })
+      setCredential({ name: String(form.get('name')), ...created })
+      formElement.reset()
+      await load()
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'Não foi possível criar o acesso.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function resetPassword(member: StaffMember) {
+    if (!window.confirm(`Gerar nova senha para ${member.name}? A senha atual deixa de valer.`)) return
+    setError(null)
+    setMessage(null)
+    setCredential(null)
+    setBusy(true)
+    try {
+      const { temporaryPassword } = await apiFetch<{ temporaryPassword: string }>(
+        `/staff/${member.id}/senha`,
+        { method: 'POST' },
+      )
+      setCredential({ name: member.name, login: member.login ?? '—', temporaryPassword })
+      await load()
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'Não foi possível gerar a senha.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function copyCredential() {
+    if (!credential) return
+    try {
+      await navigator.clipboard.writeText(
+        `Usuário: ${credential.login}\nSenha: ${credential.temporaryPassword}`,
+      )
+      setMessage('Credencial copiada.')
+    } catch {
+      // Navegador sem permissão de área de transferência: a senha continua na
+      // tela para ser anotada, então isto não é um erro de verdade.
+      setMessage('Não foi possível copiar — anote a senha antes de fechar.')
+    }
+  }
+
   async function toggleActive(member: StaffMember) {
     setError(null)
     try {
@@ -136,6 +211,30 @@ export function StaffManager() {
       ) : null}
       {message ? <p className="text-sm">{message}</p> : null}
 
+      {credential ? (
+        <div className="flex flex-col gap-2 rounded-xl border-2 border-brand-600 p-4">
+          <h2 className="font-semibold">Credencial de {credential.name}</h2>
+          <p className="text-sm text-muted-foreground">
+            Anote agora: a senha não fica guardada em lugar nenhum e não dá para consultá-la
+            depois. Se perder, gere outra.
+          </p>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-sm">
+            <dt className="text-muted-foreground">usuário</dt>
+            <dd>{credential.login}</dd>
+            <dt className="text-muted-foreground">senha</dt>
+            <dd>{credential.temporaryPassword}</dd>
+          </dl>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => void copyCredential()}>
+              Copiar
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setCredential(null)}>
+              Já anotei
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <div>
         <h2 className="mb-3 font-semibold">Funcionários</h2>
         {staff.length === 0 ? (
@@ -151,6 +250,16 @@ export function StaffManager() {
                   <strong>{member.name}</strong>
                   {!member.isActive ? (
                     <span className="ml-2 text-xs text-destructive">inativo</span>
+                  ) : null}
+                  {member.login ? (
+                    <span className="block font-mono text-xs text-muted-foreground">
+                      {member.login}
+                    </span>
+                  ) : null}
+                  {member.mustChangePassword ? (
+                    <span className="block text-xs text-amber-700">
+                      ainda com a senha temporária
+                    </span>
                   ) : null}
                   {member.phone ? (
                     <span className="block text-muted-foreground">{member.phone}</span>
@@ -168,6 +277,14 @@ export function StaffManager() {
                       </option>
                     ))}
                   </select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void resetPassword(member)}
+                  >
+                    Nova senha
+                  </Button>
                   <Button variant="outline" size="sm" onClick={() => void toggleActive(member)}>
                     {member.isActive ? 'Desativar' : 'Reativar'}
                   </Button>
@@ -178,8 +295,43 @@ export function StaffManager() {
         )}
       </div>
 
+      <form onSubmit={createAccess} className="flex flex-col gap-3 rounded-xl border border-border p-4">
+        <h2 className="font-medium">Criar acesso com usuário e senha</h2>
+        <p className="text-sm text-muted-foreground">
+          Para quem não tem e-mail. O funcionário entra com este usuário na página do
+          estabelecimento e troca a senha no primeiro acesso.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input name="name" placeholder="Nome" required maxLength={120} />
+          <Input
+            name="login"
+            placeholder="Usuário (ex.: caixa1)"
+            required
+            minLength={3}
+            maxLength={30}
+            pattern="[A-Za-z][A-Za-z0-9._\-]{2,29}"
+            title="Começa com letra; letras, números, ponto, hífen ou sublinhado"
+          />
+          <Input name="phone" placeholder="Telefone" maxLength={20} />
+          <select
+            name="roleId"
+            required
+            className="h-10 rounded-lg border border-border bg-transparent px-3 text-sm"
+          >
+            {roles.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button type="submit" disabled={busy}>
+          {busy ? 'Criando…' : 'Criar acesso'}
+        </Button>
+      </form>
+
       <form onSubmit={invite} className="flex flex-col gap-3 rounded-xl border border-border p-4">
-        <h2 className="font-medium">Convidar funcionário</h2>
+        <h2 className="font-medium">Convidar funcionário por e-mail</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <Input name="name" placeholder="Nome" required />
           <Input name="email" type="email" placeholder="E-mail" required />

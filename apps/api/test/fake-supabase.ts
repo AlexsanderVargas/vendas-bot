@@ -13,6 +13,11 @@ export interface FakeWrites {
   /** Caminhos assinados para envio e removidos do bucket. */
   signed: string[]
   removed: string[]
+  /** Contas criadas, alteradas e apagadas no Auth (Admin API). */
+  authCreated?: { id: string; email: string; password?: string; appMetadata?: unknown }[]
+  authUpdated?: { id: string; password?: string; appMetadata?: unknown }[]
+  authDeleted?: string[]
+  authInvited?: { email: string; redirectTo?: string }[]
 }
 
 interface Filter {
@@ -53,6 +58,47 @@ export function createFakeSupabase(
             return { data: paths.map((name) => ({ name })), error: null }
           },
         }
+      },
+    },
+    /**
+     * Admin API do Supabase Auth. Só o suficiente para as rotas de equipe:
+     * criar acesso, trocar senha, desfazer criação e convidar por e-mail.
+     */
+    auth: {
+      admin: {
+        async createUser(attributes: {
+          email: string
+          password?: string
+          app_metadata?: unknown
+        }) {
+          const created = (writes.authCreated ??= [])
+          const id = `a0000000-0000-0000-0000-${String(created.length + 1).padStart(12, '0')}`
+          created.push({
+            id,
+            email: attributes.email,
+            ...(attributes.password ? { password: attributes.password } : {}),
+            appMetadata: attributes.app_metadata,
+          })
+          return { data: { user: { id, email: attributes.email } }, error: null }
+        },
+        async updateUserById(id: string, attributes: { password?: string; app_metadata?: unknown }) {
+          ;(writes.authUpdated ??= []).push({
+            id,
+            ...(attributes.password ? { password: attributes.password } : {}),
+            appMetadata: attributes.app_metadata,
+          })
+          return { data: { user: { id } }, error: null }
+        },
+        async deleteUser(id: string) {
+          ;(writes.authDeleted ??= []).push(id)
+          return { data: null, error: null }
+        },
+        async inviteUserByEmail(email: string, options?: { redirectTo?: string }) {
+          const invited = (writes.authInvited ??= [])
+          invited.push({ email, ...(options?.redirectTo ? { redirectTo: options.redirectTo } : {}) })
+          const id = `b0000000-0000-0000-0000-${String(invited.length).padStart(12, '0')}`
+          return { data: { user: { id, email } }, error: null }
+        },
       },
     },
     async rpc(name: string, params: Record<string, unknown>) {

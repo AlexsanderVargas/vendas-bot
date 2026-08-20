@@ -19,7 +19,7 @@ destrava a seguinte. A Fase 1 é a que destrava todo o resto.
 | PostgreSQL local (`npm run db:test`) | sim | nada |
 | Supabase | sim | 2 projetos ativos, 500 MB de banco, 1 GB de Storage. **Pausa após 7 dias sem requisição** |
 | Vercel (frontend) | sim | plano Hobby |
-| OAuth Google / Meta / Azure / GitHub | sim | apps de desenvolvimento |
+| OAuth Google / Meta / Azure | sim | apps de desenvolvimento; só o cliente precisa |
 | Mercado Pago | sim | credenciais de teste + usuários de teste |
 | Stripe | sim | modo teste, sem ativar a conta |
 | Asaas | sim | conta Sandbox, aprovada automaticamente |
@@ -119,27 +119,53 @@ select public.resolve_branding('qualquer-slug');  -- deve devolver null, não er
 
 ---
 
-## Fase 2 — Login social (OAuth)
+## Fase 2 — Login
 
-**Destrava:** entrar no painel e no cardápio.
+O sistema tem **duas portas**, e elas não se misturam:
 
-O frontend oferece quatro provedores (`apps/web/src/app/login/social-login-buttons.tsx`):
-Google, Facebook, Outlook (Azure) e GitHub. **Você não precisa dos quatro** —
-comece pelo Google.
+| Quem | Onde entra | Como |
+|---|---|---|
+| Cliente (B2C) | `/{slug}/login` | Só SSO: Google, Facebook, Outlook |
+| Equipe (dono, gerente, garçom, caixa) | `/{slug}/painel/entrar` | Usuário **ou** e-mail, com senha |
 
-Para cada um:
+A equipe **não depende de OAuth**: sem nenhum provedor configurado, o painel já
+funciona. Configurar provedor só destrava o cliente.
+
+### Cliente — provedores sociais
+
+Comece pelo Google; os outros dois são o mesmo procedimento.
 
 1. Crie um app OAuth no console do provedor (Google Cloud Console, Meta for
-   Developers, Azure AD → App Registrations, GitHub → Developer Settings).
-2. Registre lá o *redirect URI* do Supabase: `{SUPABASE_URL}/auth/v1/callback`.
-3. No painel do Supabase, *Authentication → Providers*, habilite o provedor e
-   cole Client ID e Secret.
-4. Em *Authentication → URL Configuration*, adicione `{sua-origem}/auth/callback`
-   às **Redirect URLs** — uma entrada para desenvolvimento
-   (`http://localhost:3000/auth/callback`) e outra para produção.
+   Developers, Azure AD → App Registrations).
+2. Registre lá o *redirect URI* do **Supabase**, não o do seu site:
+   `{SUPABASE_URL}/auth/v1/callback`. É o engano mais comum aqui.
+3. No painel do Supabase, *Authentication → Sign In / Providers*, habilite o
+   provedor e cole Client ID e Secret.
+4. Em *Authentication → URL Configuration*, preencha o **Site URL** com a
+   origem de produção e adicione às **Redirect URLs** uma entrada por ambiente
+   (`http://localhost:3000/**` e `{sua-origem}/**`).
 
 Essas chaves vivem **só no painel do Supabase** — não há variável de ambiente
-para elas.
+para elas. Enquanto o provedor estiver desligado, o cliente recebe
+`Unsupported provider: provider is not enabled`.
+
+> **GitHub saiu da lista.** É conta de desenvolvedor, não de consumidor de
+> delivery: na tela do cliente, só ocupava espaço.
+
+### Equipe — usuário e senha
+
+Quem administra cria os acessos em *Painel → Equipe*, de dois jeitos:
+
+- **Usuário e senha temporária** — para quem não tem e-mail (garçom, cozinha,
+  caixa). A senha aparece **uma única vez** na tela, para o gerente repassar, e
+  o funcionário é obrigado a trocá-la no primeiro acesso.
+- **Convite por e-mail** — o funcionário recebe o link, define a própria senha
+  e cai direto no painel do estabelecimento.
+
+O convite depende de **SMTP configurado** no Supabase: o servidor de e-mail
+embutido só entrega para membros da organização do projeto. Enquanto não
+houver SMTP próprio, use o caminho de usuário e senha, que não envia e-mail
+nenhum.
 
 ---
 
@@ -354,30 +380,67 @@ update public.tenants set timezone = 'America/Manaus' where slug = 'sua-loja';
 Fuso inválido é recusado na hora de gravar, não no primeiro relatório. Ainda
 não há tela para isso no painel — é ajuste de SQL por enquanto.
 
-### Vincular sua conta ao estabelecimento de demonstração
+### O primeiro dono de um estabelecimento
 
-O seed **não cria usuários** — isso é do Supabase Auth. Entre uma vez pelo login
-social para que sua conta exista e então:
+Existe um ovo e uma galinha aqui: *Painel → Equipe* cria acessos, mas para
+abrir o painel já é preciso ser funcionário. O primeiro dono de cada
+estabelecimento nasce, então, por SQL — uma vez, e só ele. Daí em diante todo
+o resto é criado pela tela.
+
+Rode no SQL Editor do Supabase, trocando os três valores do topo:
 
 ```sql
--- 1. Grave o tenant no claim que a RLS lê:
-update auth.users
-set raw_app_meta_data = raw_app_meta_data
-    || jsonb_build_object('tenant_id', '<id-do-tenant-demo>')
-where email = '<seu-email>';
+do $$
+declare
+  v_email    text := 'voce@exemplo.com';
+  v_senha    text := 'troque-esta-senha';
+  v_nome     text := 'Seu Nome';
+  v_tenant   uuid := 'dededede-0000-0000-0000-000000000001'; -- lancheria-demo
+  v_user     uuid := gen_random_uuid();
+begin
+  -- 1. A conta no Supabase Auth. `email_confirmed_at` preenchido porque não
+  --    há e-mail de confirmação para clicar.
+  insert into auth.users (
+    instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+    raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+  ) values (
+    '00000000-0000-0000-0000-000000000000', v_user, 'authenticated', 'authenticated',
+    lower(v_email), extensions.crypt(v_senha, extensions.gen_salt('bf')), now(),
+    -- tenant_id é o claim que a API lê para saber de qual estabelecimento é
+    -- o funcionário; sem ele, toda rota do painel responde 403.
+    jsonb_build_object('provider', 'email', 'providers', array['email'],
+                       'tenant_id', v_tenant),
+    jsonb_build_object('full_name', v_nome), now(), now()
+  );
 
--- 2. Crie o vínculo de funcionário com o papel de dono.
---    public.users guarda só o perfil operacional — o e-mail continua
---    em auth.users, sem cópia.
-insert into public.users (id, tenant_id, role_id, name)
-select u.id, '<id-do-tenant-demo>', r.id, 'Meu Nome'
-from auth.users u, public.roles r
-where u.email = '<seu-email>'
-  and r.key = 'owner' and r.tenant_id is null;
+  -- 2. A identidade de e-mail. O GoTrue exige esta linha para aceitar
+  --    entrada por senha; sem ela a conta existe e não entra.
+  insert into auth.identities (
+    provider_id, user_id, identity_data, provider, last_sign_in_at,
+    created_at, updated_at
+  ) values (
+    v_user::text, v_user,
+    jsonb_build_object('sub', v_user::text, 'email', lower(v_email),
+                       'email_verified', true, 'phone_verified', false),
+    'email', now(), now(), now()
+  );
+
+  -- 3. O vínculo de funcionário, com o papel de dono. public.users guarda só
+  --    o perfil operacional — o e-mail continua em auth.users, sem cópia.
+  insert into public.users (id, tenant_id, role_id, name)
+  select v_user, v_tenant, r.id, v_nome
+  from public.roles r where r.tenant_id is null and r.key = 'owner';
+end $$;
 ```
 
-**Saia e entre de novo** depois do passo 1 — o `tenant_id` viaja no JWT, e o
-token antigo não o tem.
+Entre em `/{slug}/painel/entrar` com esse e-mail e essa senha. Troque a senha
+na primeira oportunidade: ela passou pelo seu histórico de SQL.
+
+> Se a sua conta já existe (você entrou antes pelo login social), pule os
+> passos 1 e 2 e rode só o 3, trocando `v_user` pelo id em `auth.users` — mais
+> o `update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object('tenant_id', v_tenant)`.
+> **Saia e entre de novo** depois: o `tenant_id` viaja no JWT, e o token
+> antigo não o tem.
 
 ---
 

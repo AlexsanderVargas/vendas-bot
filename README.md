@@ -16,7 +16,7 @@ Sistema SaaS multi-tenant para o setor gastronômico (lancherias, restaurantes, 
 
 ```
 apps/api/               Backend Fastify
-apps/web/               Frontend Next.js (B2C + painel interno)
+apps/web/               Frontend Next.js (cardápio B2C e painel da equipe, ambos sob /{slug})
 packages/shared/        Contratos e regras compartilhadas entre API e web
 supabase/migrations/    Fonte da verdade do schema (append-only)
 scripts/                db-test.sh, seed.sh e as suítes de asserção SQL
@@ -71,7 +71,8 @@ bash scripts/seed.sh  # estabelecimento de demonstração, para avaliar as telas
 | 8 — Identidade Visual | Marca do cliente no cardápio e no painel: cores, fonte, logo, capa, biblioteca de mídias | #46 |
 | 9 — Operação e Homologação | Guia de provisionamento, worker de polling e fila fiscal, seed de demonstração | #51 |
 | 10 — Revisão Gauntlet | Isolamento entre estabelecimentos nas funções `SECURITY DEFINER`, críticos de pagamento e de marketplace, CPF opcional, estados de erro e cache do cardápio | #62 |
-| 11 — Achados de severidade média | Estorno de estoque no cancelamento, relatórios no fuso da loja, sessão de caixa validada na baixa de título, ordem dos eventos de pagamento | — |
+| 11 — Achados de severidade média | Estorno de estoque no cancelamento, relatórios no fuso da loja, sessão de caixa validada na baixa de título, ordem dos eventos de pagamento | #81 |
+| 12 — Acesso segmentado | Cliente por SSO, equipe por usuário/e-mail e senha no painel do próprio estabelecimento, e o fim da escalada de privilégio no cadastro de equipe | — |
 
 ## O que está verificado e o que não está
 
@@ -79,8 +80,8 @@ Esta seção existe para não confundir "implementado" com "homologado".
 
 ### Verificado automaticamente
 
-- **Banco**: 41 migrations aplicam limpas do zero, com **573 asserções** cobrindo isolamento por RLS entre estabelecimentos e entre clientes, regras de negócio (preço recalculado no servidor, FIFO/FEFO, CMV histórico, conciliação de caixa, numeração fiscal sem buraco, pedido de marketplace com o preço do parceiro) e integridade (constraints, triggers de derivação de `tenant_id`, arquivo preso à pasta do próprio estabelecimento).
-- **API**: **420 testes** com `fastify.inject`, cobrindo contratos de entrada e saída, autenticação, autorização por permissão, e o mapeamento de erros de negócio para status HTTP.
+- **Banco**: 43 migrations aplicam limpas do zero, com **583 asserções** cobrindo isolamento por RLS entre estabelecimentos e entre clientes, regras de negócio (preço recalculado no servidor, FIFO/FEFO, CMV histórico, conciliação de caixa, numeração fiscal sem buraco, pedido de marketplace com o preço do parceiro) e integridade (constraints, triggers de derivação de `tenant_id`, arquivo preso à pasta do próprio estabelecimento).
+- **API**: **438 testes** com `fastify.inject`, cobrindo contratos de entrada e saída, autenticação, autorização por permissão, e o mapeamento de erros de negócio para status HTTP.
 - **Frontend**: `tsc --noEmit` e `next build` sem erros.
 - **CI**: `.github/workflows/ci.yml` roda banco (PostGIS), typecheck, testes e build a cada push e pull request.
 - **Entrega contínua**: `.github/workflows/deploy.yml` aplica as migrations no Supabase e publica o frontend na Vercel a cada push na `main` — sempre nesta ordem, e só depois de o CI passar. Os segredos necessários estão em [docs/homologacao.md](docs/homologacao.md#entrega-contínua).
@@ -90,7 +91,7 @@ Esta seção existe para não confundir "implementado" com "homologado".
 
 - **Gateways de pagamento** (Mercado Pago, Stripe, Asaas): os clientes seguem a documentação oficial de cada provedor e são exercitados com transporte HTTP mockado — formato das requisições, mapeamento de status e verificação de assinatura, incluindo recusa de assinatura adulterada e de notificação antiga. **Nenhuma credencial real foi usada.** Homologar em sandbox antes de produção.
 - **Emissão fiscal (NFC-e/NF-e)**: depende de certificado digital A1/A3, credenciamento na SEFAZ do estado e homologação. O que existe é a arquitetura de banco, a fila com contingência e retentativa, e a porta `FiscalEmitter` com um cliente HTTP genérico. **Nada foi transmitido a SEFAZ ou a integrador real.**
-- **Fluxo OAuth de ponta a ponta**: o código de login social está implementado, mas exige provedores configurados no painel do Supabase para ser exercitado.
+- **Fluxo OAuth de ponta a ponta**: o código de login social do cliente está implementado, mas exige provedores configurados no painel do Supabase para ser exercitado. A entrada da equipe (usuário/e-mail e senha) não depende de provedor nenhum, mas o `signInWithPassword` também só foi exercitado contra o Supabase Auth real depois do deploy.
 - **iFood e Uber Eats**: os clientes seguem a documentação pública de cada marketplace e são exercitados com transporte HTTP mockado — normalização de pedido, verificação de assinatura do webhook e idempotência de evento. **Nenhuma credencial de parceiro foi usada, e nenhum pedido real foi importado.** Ambos exigem homologação e aprovação do marketplace antes de produção.
 - **Supabase Storage**: o bucket `tenant-media` e suas políticas existem no projeto real, criados pela própria migration 33. O que continua sem verificação é o caminho completo de envio de imagem pelo navegador — o schema `storage` não existe no PostgreSQL local, então essa parte da migration é pulada nas asserções (o que é testado ali é o registro, o prefixo por estabelecimento e os limites de arquivo).
 

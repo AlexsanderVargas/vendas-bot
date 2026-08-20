@@ -8,7 +8,7 @@ export default async function EnderecosPage({ params }: { params: Promise<{ slug
   const { data } = await supabase.auth.getUser()
 
   if (!data.user) {
-    redirect(`/login?tenant=${slug}&next=${encodeURIComponent(`/${slug}/enderecos`)}`)
+    redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/enderecos`)}`)
   }
 
   return (

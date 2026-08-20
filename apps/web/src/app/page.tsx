@@ -7,7 +7,8 @@ export default function HomePage() {
       <h1 className="text-4xl font-bold tracking-tight">GastroSync</h1>
       <p className="text-muted-foreground">
         Plataforma de cardápio digital e delivery para o setor gastronômico.
-        Acesse o cardápio do estabelecimento pelo endereço <code>/nome-do-restaurante</code>.
+        O cardápio de cada estabelecimento fica em <code>/nome-do-restaurante</code>, e o
+        painel da equipe em <code>/nome-do-restaurante/painel</code>.
       </p>
       <Link href="/login" className={buttonVariants({ size: 'lg' })}>
         Entrar
