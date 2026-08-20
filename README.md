@@ -69,7 +69,9 @@ bash scripts/seed.sh  # estabelecimento de demonstração, para avaliar as telas
 | 6 — Fiscal e Tributário | Configuração tributária, documentos fiscais, fila de emissão e contingência | #35 |
 | 7 — Marketplaces | Integração com iFood e Uber Eats: importação de pedidos, mapa de itens, fila de eventos idempotente | #41 |
 | 8 — Identidade Visual | Marca do cliente no cardápio e no painel: cores, fonte, logo, capa, biblioteca de mídias | #46 |
-| 9 — Operação e Homologação | Guia de provisionamento, worker de polling e fila fiscal, seed de demonstração | — |
+| 9 — Operação e Homologação | Guia de provisionamento, worker de polling e fila fiscal, seed de demonstração | #51 |
+| 10 — Revisão Gauntlet | Isolamento entre estabelecimentos nas funções `SECURITY DEFINER`, críticos de pagamento e de marketplace, CPF opcional, estados de erro e cache do cardápio | #62 |
+| 11 — Achados de severidade média | Estorno de estoque no cancelamento, relatórios no fuso da loja, sessão de caixa validada na baixa de título, ordem dos eventos de pagamento | — |
 
 ## O que está verificado e o que não está
 
@@ -77,12 +79,12 @@ Esta seção existe para não confundir "implementado" com "homologado".
 
 ### Verificado automaticamente
 
-- **Banco**: 34 migrations aplicam limpas do zero, com **494 asserções** cobrindo isolamento por RLS entre estabelecimentos e entre clientes, regras de negócio (preço recalculado no servidor, FIFO/FEFO, CMV histórico, conciliação de caixa, numeração fiscal sem buraco, pedido de marketplace com o preço do parceiro) e integridade (constraints, triggers de derivação de `tenant_id`, arquivo preso à pasta do próprio estabelecimento).
-- **API**: **394 testes** com `fastify.inject`, cobrindo contratos de entrada e saída, autenticação, autorização por permissão, e o mapeamento de erros de negócio para status HTTP.
+- **Banco**: 41 migrations aplicam limpas do zero, com **573 asserções** cobrindo isolamento por RLS entre estabelecimentos e entre clientes, regras de negócio (preço recalculado no servidor, FIFO/FEFO, CMV histórico, conciliação de caixa, numeração fiscal sem buraco, pedido de marketplace com o preço do parceiro) e integridade (constraints, triggers de derivação de `tenant_id`, arquivo preso à pasta do próprio estabelecimento).
+- **API**: **420 testes** com `fastify.inject`, cobrindo contratos de entrada e saída, autenticação, autorização por permissão, e o mapeamento de erros de negócio para status HTTP.
 - **Frontend**: `tsc --noEmit` e `next build` sem erros.
 - **CI**: `.github/workflows/ci.yml` roda banco (PostGIS), typecheck, testes e build a cada push e pull request.
 - **Entrega contínua**: `.github/workflows/deploy.yml` aplica as migrations no Supabase e publica o frontend na Vercel a cada push na `main` — sempre nesta ordem, e só depois de o CI passar. Os segredos necessários estão em [docs/homologacao.md](docs/homologacao.md#entrega-contínua).
-- **Supabase real**: as 34 migrations foram aplicadas num projeto Supabase gerenciado (PostgreSQL 17), resultando em 46 tabelas em `public`, o bucket `tenant-media` e suas políticas de `storage.objects`. O schema aplica limpo tanto no PostgreSQL local quanto no Supabase — o que muda entre os dois é só o schema `storage`, ausente no local.
+- **Supabase real**: as migrations foram aplicadas num projeto Supabase gerenciado (PostgreSQL 17), resultando em 46 tabelas em `public`, o bucket `tenant-media` e suas políticas de `storage.objects`. O schema aplica limpo tanto no PostgreSQL local quanto no Supabase — o que muda entre os dois é só o schema `storage`, ausente no local.
 
 ### NÃO verificado contra ambientes reais
 
