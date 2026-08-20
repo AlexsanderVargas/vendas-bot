@@ -367,6 +367,19 @@ bash scripts/seed.sh                              # PostgreSQL local
 
 Rodar duas vezes não duplica nada.
 
+### Fuso do estabelecimento
+
+Todo relatório corta o dia no fuso da loja, gravado em `tenants.timezone` — o
+padrão é `America/Sao_Paulo`. Loja no Acre, no Amazonas ou em Fernando de
+Noronha precisa ajustar, senão o fechamento do dia sai deslocado:
+
+```sql
+update public.tenants set timezone = 'America/Manaus' where slug = 'sua-loja';
+```
+
+Fuso inválido é recusado na hora de gravar, não no primeiro relatório. Ainda
+não há tela para isso no painel — é ajuste de SQL por enquanto.
+
 ### O primeiro dono de um estabelecimento
 
 Existe um ovo e uma galinha aqui: *Painel → Equipe* cria acessos, mas para

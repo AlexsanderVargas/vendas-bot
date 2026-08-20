@@ -48,4 +48,10 @@ describe('mapFinanceError', () => {
   it('mapeia valor inválido para 400', () => {
     expect(mapFinanceError('valor_invalido').status).toBe(400)
   })
+  it('mapeia caixa inválido para 409', () => {
+    // Conflito, não erro de entrada: o id existe, o caixa é que não serve —
+    // ou está fechado, ou é de outro estabelecimento.
+    expect(mapFinanceError('sessao_invalida').status).toBe(409)
+    expect(mapFinanceError('sessao_invalida').message).toContain('caixa aberto')
+  })
 })

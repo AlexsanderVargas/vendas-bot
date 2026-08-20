@@ -42,6 +42,10 @@ const FINANCE_ERROR: Record<string, { status: number; message: string }> = {
   conta_nao_encontrada: { status: 404, message: 'Título não encontrado.' },
   conta_cancelada: { status: 409, message: 'Título cancelado não aceita baixa.' },
   valor_invalido: { status: 400, message: 'Valor de baixa inválido para o saldo devedor.' },
+  sessao_invalida: {
+    status: 409,
+    message: 'Caixa inválido: use um caixa aberto deste estabelecimento.',
+  },
   parcelas_invalidas: { status: 400, message: 'Informe um total positivo e ao menos uma parcela.' },
 }
 
